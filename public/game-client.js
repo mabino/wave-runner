@@ -133,28 +133,30 @@
 
   function drawWave(w, beachTop) {
     // Subtle differentiation by size: taller foam, deeper shadow, wider
-    // crest as waves get bigger — read the water, time the move.
+    // crest as waves get bigger — read the water, time the move. Fronts can
+    // arrive at an angle (w.slope tilts the crest across the screen).
     const t = performance.now() / 1000;
-    const y = sy(w.y);
     const foamH = 2 + w.size * 2.4;
     const amp = 1.5 + w.size * 1.3;
     const shadowH = w.size * 7;
+    const yAt = (px) => sy(w.y + (w.slope || 0) * ((px / W) * 100 - 50));
 
-    // Shadow the face of the wave (approaching mass).
-    const grad = ctx.createLinearGradient(0, y - shadowH, 0, y);
-    grad.addColorStop(0, 'rgba(8, 44, 66, 0)');
-    grad.addColorStop(1, `rgba(8, 44, 66, ${0.12 + w.size * 0.09})`);
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, y - shadowH, W, shadowH);
+    // Shadow the face of the wave (approaching mass), following the tilt.
+    ctx.fillStyle = `rgba(8, 44, 66, ${0.10 + w.size * 0.07})`;
+    ctx.beginPath();
+    ctx.moveTo(0, yAt(0) - shadowH);
+    for (let x = 0; x <= W; x += 16) ctx.lineTo(x, yAt(x) - shadowH);
+    for (let x = W; x >= 0; x -= 16) ctx.lineTo(x, yAt(x));
+    ctx.closePath();
+    ctx.fill();
 
     // Foam crest with a wobble.
     ctx.beginPath();
-    ctx.moveTo(0, y);
+    ctx.moveTo(0, yAt(0));
     for (let x = 0; x <= W; x += 12) {
-      ctx.lineTo(x, y + Math.sin(x / 34 + w.wobble + t * (1.6 + w.size * 0.5)) * amp);
+      ctx.lineTo(x, yAt(x) + Math.sin(x / 34 + w.wobble + t * (1.6 + w.size * 0.5)) * amp);
     }
-    ctx.lineTo(W, y + foamH + 4);
-    ctx.lineTo(0, y + foamH + 4);
+    for (let x = W; x >= 0; x -= 12) ctx.lineTo(x, yAt(x) + foamH + 4);
     ctx.closePath();
     ctx.fillStyle = `rgba(255,255,255,${0.55 + w.size * 0.12})`;
     ctx.fill();
@@ -163,7 +165,7 @@
     if (w.size >= 2) {
       ctx.fillStyle = 'rgba(255,255,255,0.8)';
       for (let x = ((w.wobble * 97) % 40); x < W; x += 40) {
-        ctx.fillRect(x + Math.sin(t * 3 + x) * 4, y - 2 - w.size, 5, 2);
+        ctx.fillRect(x + Math.sin(t * 3 + x) * 4, yAt(x) - 2 - w.size, 5, 2);
       }
     }
   }
@@ -315,9 +317,11 @@
   }
 
   function drawGull(g) {
-    // Swoop from the top of the screen down to the marked item.
-    const gx = sx(g.x);
-    const gy = -20 + (sy(g.y) + 20) * g.progress;
+    // Swoop from a per-raid entry point across the sky to the marked item,
+    // accelerating into the dive.
+    const p = g.progress;
+    const gx = lerp(sx(g.fromX !== undefined ? g.fromX : g.x), sx(g.x), p);
+    const gy = -20 + (sy(g.y) + 20) * p * p;
     const flap = Math.sin(performance.now() / 90) * 4;
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 3;
@@ -477,7 +481,11 @@
   function frame() {
     if (!running) return;
     requestAnimationFrame(frame);
-    if (!snap) return;
+    // Self-heal: if layout settled after start() (or anything resized the
+    // canvas without firing our handlers), re-measure. A 0×0 canvas here is
+    // exactly the "solid dark background" bug.
+    if (canvas.clientWidth !== W || canvas.clientHeight !== H) resize();
+    if (!snap || W === 0 || H === 0) return;
 
     const beachTop = sy(snap.flags.beachY);
     drawOcean(beachTop);

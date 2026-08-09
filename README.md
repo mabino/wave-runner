@@ -4,8 +4,8 @@ A 2D top-down multiplayer browser game: beachgoers survive as many waves as
 they can before the end of the day. Ocean at the top of the screen, sand on
 the lower third, lifeguards on patrol, weather rolling in.
 
-Playable on iPhone/iPad Safari in portrait or landscape. Served at
-`binolabs.com/waves/`.
+Playable on iPhone/iPad Safari in portrait or landscape (tap to move) and
+on desktop (tap or WASD/arrow keys). Served at `binolabs.com/waves/`.
 
 ## How it plays
 
@@ -17,6 +17,10 @@ Playable on iPhone/iPad Safari in portrait or landscape. Served at
   **dive**, thumpers demand a **dive**. Mistime it and you're washed up on
   the sand with less HP. Diving costs a sliver of HP (never lethal) but
   pays a scoring premium when it lands.
+- **Tide**: the waterline breathes through the day — high tide eats the
+  beach and speeds up the surf; low tide exposes sand and slows it. The
+  HUD shows the tide direction, and waves arrive at gradually drifting
+  angles that sharpen late in the day.
 - **Status bar** shows the time of day plus the next two hours of weather.
   When a **thunderstorm** hour arrives, being in the water risks a lightning
   strike — wait it out on the sand, or wear the body suit.

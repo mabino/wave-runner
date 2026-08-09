@@ -635,7 +635,13 @@ describe('wildlife hazards', () => {
     const early = run(game, 0.3);
     expect(early.find(e => e.type === 'gull-swoop')).toMatchObject({ powerupId: 'pu1' });
     expect(game.powerups).toHaveLength(1);      // telegraph window
-    const later = run(game, game.cfg.gullSnatchDelay + 0.3);
+    // Each raid flies its own line at its own pace.
+    expect(game.gullRaid.fromX).toBeGreaterThanOrEqual(5);
+    expect(game.gullRaid.fromX).toBeLessThanOrEqual(95);
+    const flight = game.gullRaid.at - game.gullRaid.start;
+    expect(flight).toBeGreaterThanOrEqual(game.cfg.gullSnatchMin);
+    expect(flight).toBeLessThanOrEqual(game.cfg.gullSnatchMax);
+    const later = run(game, game.cfg.gullSnatchMax + 0.3);
     expect(later.find(e => e.type === 'gull-steal')).toMatchObject({ powerupId: 'pu1' });
     expect(game.powerups).toHaveLength(0);
   });
@@ -647,10 +653,110 @@ describe('wildlife hazards', () => {
     game.nextGullAt = 0;
     run(game, 0.2);                             // swoop begins
     game.handleTapPowerup('p1', 'pu1');         // player is intersecting
-    const events = run(game, game.cfg.gullSnatchDelay + 0.5);
+    const events = run(game, game.cfg.gullSnatchMax + 0.5);
     expect(events.find(e => e.type === 'gull-steal')).toBeUndefined();
     expect(p.powerupsCollected).toBe(1);
     expect(game.gullRaid).toBeNull();
+  });
+});
+
+describe('keyboard steering', () => {
+  test('a held direction moves the player continuously; release stops', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 80, 50);
+    game.handleSteer('p1', 0, -1);
+    run(game, 1);
+    expect(p.y).toBeLessThan(69);        // marched steadily up-screen
+    game.handleSteer('p1', 0, 0);        // key released
+    const y = p.y;
+    run(game, 1);
+    expect(p.y).toBeCloseTo(y, 5);
+  });
+
+  test('steering stands a resting player up and clears tap targets', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 80, 50);
+    game.handleRest('p1');
+    game.handleSteer('p1', 1, 0);
+    expect(p.state).toBe('idle');
+    expect(p.target).toBeNull();
+    expect(p.steer).toEqual({ x: 1, y: 0 });
+  });
+
+  test('washed players cannot steer', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 40, 50);
+    game._washAshore(p);
+    game.handleSteer('p1', 0, -1);
+    expect(p.steer).toBeNull();
+  });
+
+  test('walking over an item collects it without a tap', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 80, 20);
+    p.hp = 50;
+    game.powerups.push({ id: 'pu1', type: 'sunscreen', x: 40, y: 80, expiresAt: 1000 });
+    game.handleSteer('p1', 1, 0);        // stroll right along the beach
+    run(game, 3);
+    expect(p.powerupsCollected).toBe(1);
+    expect(p.hp).toBeGreaterThan(50);
+  });
+});
+
+describe('tide', () => {
+  test('the waterline breathes across the day', () => {
+    const game = makeGame({ dayLengthSec: 400, tideCycles: 2, tideAmp: 8 });
+    expect(game.waterline()).toBeCloseTo(66, 5);
+    game.t = 50;    // quarter of the first cycle — peak high tide
+    expect(game.waterline()).toBeCloseTo(74, 5);
+    game.t = 150;   // three quarters — dead low tide
+    expect(game.waterline()).toBeCloseTo(58, 5);
+  });
+
+  test('the rising tide floods a low napping spot and wakes the napper', () => {
+    const game = makeGame({ dayLengthSec: 400 });
+    const p = addSwimmer(game, 'p1', 68, 50);   // dry sand at mean tide
+    game.handleRest('p1');
+    expect(p.state).toBe('resting');
+    game.t = 50;                                 // high tide: waterline 74
+    run(game, 0.2);
+    expect(p.state).toBe('idle');
+  });
+
+  test('waves run faster at high tide than at low', () => {
+    const advance = (tAt) => {
+      const game = makeGame({ dayLengthSec: 400 });
+      game.t = tAt;
+      sendWave(game, 2, 10);
+      game.tick(1);
+      return game.waves[0].y;
+    };
+    expect(advance(50)).toBeGreaterThan(advance(150));
+  });
+});
+
+describe('angled waves', () => {
+  test('a tilted front reaches same-depth players at different moments', () => {
+    const game = makeGame();
+    const right = addSwimmer(game, 'right', 40, 80);
+    const left = addSwimmer(game, 'left', 40, 20);
+    game.waves.push({ id: 'tilt', size: 1, y: 35, slope: 0.1, wobble: 0, resolved: new Set() });
+    run(game, 0.05);
+    expect(right.wavesRidden).toBe(1);   // the front is lower on the right
+    expect(left.wavesRidden).toBe(0);
+  });
+
+  test('the approach angle drifts wave to wave but stays bounded', () => {
+    const game = new WaveRunnerGame({}, () => 0.99);   // drift always positive
+    game.nextPlaneAt = Infinity;
+    game.nextSharkAt = Infinity;
+    game.nextJellyAt = Infinity;
+    game.nextCrabAt = Infinity;
+    game.nextGullAt = Infinity;
+    for (let i = 0; i < 200 && game.phase === 'running'; i++) game.tick(0.5);
+    expect(game.waveSlope).toBeGreaterThan(0.02);
+    expect(Math.abs(game.waveSlope)).toBeLessThanOrEqual(0.03 + game.cfg.waveSlopeCap + 1e-9);
+    expect(game.waves.every(w => typeof w.slope === 'number')).toBe(true);
   });
 });
 

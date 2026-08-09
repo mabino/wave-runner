@@ -156,6 +156,11 @@ io.on('connection', (socket) => {
     room?.game?.handleMove(socket.id, x, y);
   });
 
+  socket.on('game:steer', ({ dx, dy } = {}) => {
+    const room = roomManager.getRoomByPlayer(socket.id);
+    room?.game?.handleSteer(socket.id, dx, dy);
+  });
+
   socket.on('game:action', ({ type } = {}) => {
     const room = roomManager.getRoomByPlayer(socket.id);
     room?.game?.handleAction(socket.id, type);

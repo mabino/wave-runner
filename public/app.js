@@ -225,7 +225,8 @@
     $('hud-clock').textContent = `${WEATHER_ICON[snap.forecast.now]} ${fmtClock(snap.clockHour)}`;
     const f1 = snap.forecast.next1 ? WEATHER_ICON[snap.forecast.next1] : '🌙';
     const f2 = snap.forecast.next2 ? WEATHER_ICON[snap.forecast.next2] : '🌙';
-    $('hud-forecast').textContent = `next: ${f1} ${f2}`;
+    const tide = snap.tide ? (snap.tide.rising ? '🌊↑' : '🌊↓') : '';
+    $('hud-forecast').textContent = `next: ${f1} ${f2} ${tide}`;
 
     if (!me) return;
     const pct = Math.max(0, Math.min(100, me.hp));
@@ -285,6 +286,36 @@
   $('btn-rest').addEventListener('pointerdown', (e) => {
     e.preventDefault();
     socket.emit('game:rest');
+  });
+
+  // ── Desktop keyboard: WASD / arrow keys steer continuously ─────────────
+  const KEYMAP = {
+    KeyW: [0, -1], KeyS: [0, 1], KeyA: [-1, 0], KeyD: [1, 0],
+    ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
+  };
+  const heldKeys = new Set();
+
+  function sendSteer() {
+    let dx = 0, dy = 0;
+    for (const k of heldKeys) { dx += KEYMAP[k][0]; dy += KEYMAP[k][1]; }
+    socket.emit('game:steer', { dx, dy });
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if (!state.playing || !KEYMAP[e.code] || e.repeat) return;
+    e.preventDefault();
+    heldKeys.add(e.code);
+    sendSteer();
+  });
+  window.addEventListener('keyup', (e) => {
+    if (!KEYMAP[e.code]) return;
+    if (heldKeys.delete(e.code) && state.playing) { e.preventDefault(); sendSteer(); }
+  });
+  window.addEventListener('blur', () => {
+    if (heldKeys.size) {
+      heldKeys.clear();
+      if (state.playing) socket.emit('game:steer', { dx: 0, dy: 0 });
+    }
   });
 
   $('btn-sound').addEventListener('click', () => {
