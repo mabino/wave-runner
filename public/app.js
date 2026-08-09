@@ -251,6 +251,13 @@
 
     $('btn-rest').classList.toggle('on', me.state === 'resting');
 
+    // On the sand, Dive becomes Dig (burrow in, shrug off trouble).
+    const onSand = me.y >= snap.flags.beachY;
+    if (state.diveMode !== onSand) {
+      state.diveMode = onSand;
+      $('btn-dive').innerHTML = onSand ? '🕳️<span>Dig</span>' : '🤿<span>Dive</span>';
+    }
+
     if (me.hp < state.lastHp && navigator.vibrate) navigator.vibrate(60);
     state.lastHp = me.hp;
   }
@@ -276,7 +283,7 @@
     });
   }
   bindAction('btn-jump', 'jump', () => Beach.sfx.jump());
-  bindAction('btn-dive', 'dive', () => Beach.sfx.dive());
+  bindAction('btn-dive', 'dive', () => (state.diveMode ? Beach.sfx.dig() : Beach.sfx.dive()));
   bindAction('btn-stand', 'stand', null);
   $('btn-shove').addEventListener('pointerdown', (e) => {
     e.preventDefault();

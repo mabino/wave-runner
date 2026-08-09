@@ -46,10 +46,15 @@ on desktop (tap or WASD/arrow keys). Served at `binolabs.com/waves/`.
   otherwise.
 - **Stand** doubles as a bail-out: cancelling a mistimed jump/dive
   collapses most of the cooldown so a quick correction is possible.
+- **Diving** also hides you: a diver under the surface cannot be shoved.
+  On the sand the same button becomes **Dig** — burrow in for a couple of
+  seconds, immune to shoves, crab pinches, and lightning, but rooted in
+  place.
 - **Beach bullies** (lobby option): up to three computer beachgoers —
-  Mellow Mel, Pushy Pete, and Big Bruiser — with rising aggression. They
-  read waves, chase power-ups, nap when battered, flee storms (the meaner,
-  the later), and shove anyone in reach.
+  Mellow Mel, Pushy Pete (the quickest), and Big Bruiser (slow but mean) —
+  with rising aggression. They read waves, chase power-ups, nap when
+  battered, flee storms (the meaner, the later), and shove anyone in
+  reach — though their reach is half a human's lunge.
 - A player is out when their HP hits zero. The game ends when everyone is
   out or the clock hits 7 PM; the tally crowns the **Best on the Beach**.
 

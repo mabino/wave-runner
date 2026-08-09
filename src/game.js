@@ -40,6 +40,7 @@ const DEFAULTS = {
   actionCooldown: 0.5,
   diveHpCost: 2,            // diving is tiring...
   diveRideBonus: 5,         // ...but pays better when it lands
+  digDuration: 2,           // seconds buried when "diving" on the sand
 
   walkSpeed: 16,            // units/sec on sand
   swimSpeed: 10,            // units/sec in water
@@ -65,7 +66,9 @@ const DEFAULTS = {
   // Shove acquisition range in world units. Precise touch positioning is
   // hard, so the shover LUNGES to the nearest swimmer in this range and
   // connects on contact — the range is what you'd read as "near me".
+  // NPCs get no such generosity: they must genuinely close the distance.
   shoveRadius: 25,
+  npcShoveRadius: 12,
   shoveCooldown: 3,
   shoveDamage: 5,
 
@@ -93,11 +96,12 @@ const WAVE_TYPES = {
 const WEATHER = ['sunny', 'cloudy', 'storm'];
 
 // Optional computer-controlled beachgoers, in escalating order of menace.
-// aggression drives shoving and prey-stalking; skill drives wave reading.
+// aggression drives shoving and prey-stalking; skill drives wave reading;
+// pace scales movement speed — Pete darts, Bruiser lumbers.
 const NPC_ROSTER = [
-  { id: 'npc-mel',     name: 'Mellow Mel',  aggression: 0.25, avatar: { archetype: 5, skin: 1, outfit: 2 } },
-  { id: 'npc-pete',    name: 'Pushy Pete',  aggression: 0.55, avatar: { archetype: 1, skin: 0, outfit: 3 } },
-  { id: 'npc-bruiser', name: 'Big Bruiser', aggression: 0.9,  avatar: { archetype: 3, skin: 2, outfit: 0 } },
+  { id: 'npc-mel',     name: 'Mellow Mel',  aggression: 0.25, pace: 0.9,  avatar: { archetype: 5, skin: 1, outfit: 2 } },
+  { id: 'npc-pete',    name: 'Pushy Pete',  aggression: 0.55, pace: 1.15, avatar: { archetype: 1, skin: 0, outfit: 3 } },
+  { id: 'npc-bruiser', name: 'Big Bruiser', aggression: 0.9,  pace: 0.7,  avatar: { archetype: 3, skin: 2, outfit: 0 } },
 ];
 
 class WaveRunnerGame {
@@ -185,6 +189,7 @@ class WaveRunnerGame {
       this.players[spec.id].npc = {
         aggression: spec.aggression,
         skill: 0.55 + 0.25 * spec.aggression,
+        pace: spec.pace,
         nextDecisionAt: 0,
       };
     }
@@ -274,6 +279,15 @@ class WaveRunnerGame {
     }
     if (type !== 'jump' && type !== 'dive') return;
     if (this.t < p.cooldownUntil) return;
+    if (type === 'dive' && p.y >= this.waterline()) {
+      // On the sand, diving becomes digging in: a brief burrow that shrugs
+      // off shoves, crab pinches, and lightning. Free, but you can't move.
+      p.action = { type: 'dig', startedAt: this.t, until: this.t + this.cfg.digDuration };
+      p.cooldownUntil = p.action.until + this.cfg.actionCooldown;
+      p.target = null;
+      p.steer = null;
+      return;
+    }
     const dur = type === 'jump' ? this.cfg.jumpDuration : this.cfg.diveDuration;
     // Exertion: each dive costs a little HP, but never knocks a player out.
     if (type === 'dive') p.hp = Math.max(1, p.hp - this.cfg.diveHpCost);
@@ -320,12 +334,18 @@ class WaveRunnerGame {
     const p = this.players[id];
     if (!p || p.state !== 'idle' || this.phase !== 'running') return;
     if (this.t < p.shoveReadyAt) return;
+    // No shoving from under the water or under the sand.
+    if (this._actionActive(p, 'dive') || this._actionActive(p, 'dig')) return;
 
-    // Nearest other beachgoer within arm's reach who is in the water.
+    // Nearest other beachgoer within arm's reach who is in the water —
+    // and reachable: a diver is under the surface, a digger under the sand.
+    // The lunge-assist range compensates humans for touch imprecision;
+    // NPCs have perfect aim, so their reach is much shorter.
     let target = null;
-    let best = this.cfg.shoveRadius;
+    let best = p.npc ? this.cfg.npcShoveRadius : this.cfg.shoveRadius;
     for (const q of this._alivePlayers()) {
       if (q.id === id || q.state === 'washed' || q.y >= this.waterline()) continue;
+      if (this._actionActive(q, 'dive') || this._actionActive(q, 'dig')) continue;
       const d = this._dist(p, q);
       if (d <= best) { best = d; target = q; }
     }
@@ -403,6 +423,10 @@ class WaveRunnerGame {
   _emit(ev) { this.events.push({ ...ev, t: this.t }); }
 
   _dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+  _actionActive(p, type) {
+    return !!p.action && p.action.type === type && this.t <= p.action.until;
+  }
 
   // Dump a player onto the sand, briefly stunned — the shared fate of
   // wipeouts, lifeguard hauls, and shoves.
@@ -526,7 +550,11 @@ class WaveRunnerGame {
 
       if (p.action && this.t > p.action.until) p.action = null;
 
-      const speed = p.y < waterline ? this.cfg.swimSpeed : this.cfg.walkSpeed;
+      // Buried players stay put until they surface.
+      if (this._actionActive(p, 'dig')) continue;
+
+      const speed = (p.y < waterline ? this.cfg.swimSpeed : this.cfg.walkSpeed)
+        * (p.npc ? p.npc.pace : 1);
 
       if (p.steer) {
         p.x = Math.max(2, Math.min(98, p.x + p.steer.x * speed * dt));
@@ -607,11 +635,11 @@ class WaveRunnerGame {
         continue;
       }
 
-      // Aggression: shove anyone within lunge range.
+      // Aggression: shove anyone within (their shorter) reach.
       if (this.t >= p.shoveReadyAt && this.rng() < p.npc.aggression * 0.35) {
         const near = this._alivePlayers().some(q =>
           q.id !== p.id && q.state !== 'washed' && q.y < waterline &&
-          this._dist(p, q) <= this.cfg.shoveRadius);
+          this._dist(p, q) <= this.cfg.npcShoveRadius);
         if (near) { this.handleShove(p.id); continue; }
       }
 
@@ -681,7 +709,8 @@ class WaveRunnerGame {
     }
     if (this.t >= this.nextLightningAt) {
       this.nextLightningAt = this.t + this._rand(this.cfg.lightningMinGap, this.cfg.lightningMaxGap);
-      const swimmers = this._alivePlayers().filter(p => p.y < this.waterline());
+      const swimmers = this._alivePlayers()
+        .filter(p => p.y < this.waterline() && !this._actionActive(p, 'dig'));
       if (swimmers.length === 0) {
         this._emit({ type: 'lightning', playerId: null });
         return;
@@ -814,7 +843,8 @@ class WaveRunnerGame {
           this._emit({ type: 'jelly-sting', playerId: p.id });
           this._applyDamage(p, cfg.jellyDamage, 'jelly');
           break;
-        } else if (h.kind === 'crab' && !inWater && d <= cfg.hazardRadius - 1 && !h.hit.has(p.id)) {
+        } else if (h.kind === 'crab' && !inWater && d <= cfg.hazardRadius - 1 && !h.hit.has(p.id)
+                   && !this._actionActive(p, 'dig')) {
           h.hit.add(p.id);
           if (p.state === 'resting') p.state = 'idle';   // pinched awake
           this._emit({ type: 'crab-pinch', playerId: p.id });

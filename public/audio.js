@@ -183,6 +183,7 @@
       blip('triangle', 1450, 0.18, 0.08, 0.2, 820);
     },
     sting() { blip('square', 1200, 0.12, 0.12, 0, 500); },
+    dig() { noiseBurst(0.12, 0.2, 900); noiseBurst(0.12, 0.18, 800, 0.14); },
     pinch() { blip('square', 240, 0.05, 0.14); blip('square', 210, 0.05, 0.14, 0.07); },
     eliminated() {
       blip('triangle', 392, 0.25, 0.14);

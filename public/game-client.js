@@ -390,6 +390,15 @@
       ctx.beginPath();
       ctx.ellipse(x, y, w * (0.35 + rip * 0.12), 4 + rip * 2, 0, 0, Math.PI * 2);
       ctx.stroke();
+    } else if (p.action === 'dig') {
+      // Buried in the sand: a mound with just the head poking out.
+      ctx.fillStyle = SAND_DARK;
+      ctx.beginPath();
+      ctx.ellipse(x, y + 2, w * 0.62, 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.drawImage(sprite, 0, 0, sprite.width, 6, x - w / 2, y - 10, w, (6 / sprite.height) * h);
+      ctx.fillStyle = SAND;
+      ctx.fillRect(x - w * 0.45, y - 2, w * 0.9, 4);
     } else if (p.state === 'washed') {
       ctx.translate(x, y);
       ctx.rotate(Math.PI / 2);

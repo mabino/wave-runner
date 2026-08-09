@@ -530,6 +530,27 @@ describe('shoving', () => {
     expect(Math.abs(a.x - targetX)).toBeLessThanOrEqual(3.5);   // closed the gap
   });
 
+  test('a diver under the surface cannot be shoved', () => {
+    const game = makeGame();
+    const [, b] = pair(game);
+    game.handleAction('victim', 'dive');
+    game.handleShove('attacker');
+    const events = run(game, 0.2);
+    expect(events.find(e => e.type === 'shove')).toBeUndefined();
+    expect(events.find(e => e.type === 'shove-miss')).toBeDefined();
+    expect(b.state).toBe('idle');
+    expect(b.hp).toBe(100 - game.cfg.diveHpCost);   // only the dive cost
+  });
+
+  test('you cannot shove while diving or buried', () => {
+    const game = makeGame();
+    pair(game);
+    game.handleAction('attacker', 'dive');
+    game.handleShove('attacker');
+    const events = run(game, 0.2);
+    expect(events.find(e => e.type === 'shove' || e.type === 'shove-miss')).toBeUndefined();
+  });
+
   test('a shove can eliminate a swimmer on their last legs', () => {
     const game = makeGame();
     const [, b] = pair(game);
@@ -773,6 +794,54 @@ describe('angled waves', () => {
   });
 });
 
+describe('digging in on the sand', () => {
+  test('diving on the sand digs in instead — free, immobile, timed', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 80, 50);
+    game.handleAction('p1', 'dive');
+    expect(p.action.type).toBe('dig');
+    expect(p.hp).toBe(100);                  // digging costs nothing
+    game.handleSteer('p1', 1, 0);            // try to walk while buried
+    run(game, 1);
+    expect(p.x).toBe(50);                    // not going anywhere
+    run(game, game.cfg.digDuration);
+    expect(p.action).toBeNull();             // surfaced
+    run(game, 1);
+    expect(p.x).toBeGreaterThan(50);         // held steer resumes after surfacing
+  });
+
+  test('a buried player shrugs off crab pinches', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 80, 50);
+    game.handleAction('p1', 'dive');         // dig in
+    const crab = { id: 'c1', kind: 'crab', x: 50, y: 80, vx: 0, vy: 0, hit: new Set(), expiresAt: Infinity };
+    game.hazards.push(crab);
+    const events = run(game, 1.5);           // crab sits on the mound all the while
+    expect(events.find(e => e.type === 'crab-pinch')).toBeUndefined();
+    expect(p.hp).toBe(100);
+  });
+
+  test('lightning cannot find a buried player', () => {
+    const game = makeGame();
+    game.hours = Array(game.hours.length).fill('storm');
+    const p = addSwimmer(game, 'p1', 60, 50);   // in the water at mean tide
+    p.action = { type: 'dig', startedAt: 0, until: 10000 };   // freak tide burial
+    const events = run(game, 10);
+    const strike = events.find(e => e.type === 'lightning');
+    expect(strike.playerId).toBeNull();
+    expect(p.hp).toBe(100);
+  });
+
+  test('standing unburies early', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 80, 50);
+    game.handleAction('p1', 'dive');
+    expect(p.action.type).toBe('dig');
+    game.handleAction('p1', 'stand');
+    expect(p.action).toBeNull();
+  });
+});
+
 describe('NPC beachgoers', () => {
   test('addNpcs seeds roster players flagged as NPCs with rising aggression', () => {
     const game = makeGame();
@@ -818,6 +887,48 @@ describe('NPC beachgoers', () => {
     run(game, 8);
     expect(npc.state).toBe('resting');
     expect(npc.hp).toBeGreaterThan(20);
+  });
+
+  test('Pete is the fastest NPC and Bruiser the slowest', () => {
+    const game = makeGame();
+    game.addNpcs(3);
+    const paces = Object.values(game.players).filter(p => p.npc).map(p => p.npc.pace);
+    const [mel, pete, bruiser] = paces;
+    expect(pete).toBeGreaterThan(mel);
+    expect(pete).toBeGreaterThan(1);        // faster than a human
+    expect(bruiser).toBeLessThan(mel);
+    expect(bruiser).toBeLessThan(1);        // slower than a human
+    // And it shows in the water: same command, different ground covered.
+    const swim = (id) => {
+      const p = game.players[id];
+      p.x = 10; p.y = 40; p.target = null; p.npc.nextDecisionAt = Infinity;
+      game.handleMove(id, 90, 40);
+      run(game, 2);
+      return p.x - 10;
+    };
+    expect(swim('npc-pete')).toBeGreaterThan(swim('npc-bruiser'));
+  });
+
+  test('NPCs must be much closer than humans to land a shove', () => {
+    const game = makeGame({}, () => 0.2);
+    game.hours = Array(game.hours.length).fill('sunny');
+    game.addNpcs(3);
+    game.players['npc-mel'].x = 5;  game.players['npc-mel'].y = 90;
+    game.players['npc-pete'].x = 95; game.players['npc-pete'].y = 90;
+    const bruiser = game.players['npc-bruiser'];
+    bruiser.x = 50; bruiser.y = 40;
+    // Within the human lunge range (25) but beyond the NPC reach (12):
+    // the bully must swim closer before a shove can land.
+    const victim = addSwimmer(game, 'victim', 40, 50 + game.cfg.npcShoveRadius + 6);
+    victim.hp = 100;
+    game.handleShove('npc-bruiser');           // direct attempt from 18 away
+    const early = run(game, 0.1);
+    expect(early.find(e => e.type === 'shove')).toBeUndefined();
+    // A human at the same distance connects immediately.
+    const human = addSwimmer(game, 'human', 40, victim.x - game.cfg.shoveRadius + 2);
+    game.handleShove('human');
+    const events = run(game, 0.1);
+    expect(events.find(e => e.type === 'shove' && e.shoverId === 'human')).toBeDefined();
   });
 
   test('the day ends when every human is out, even with NPCs still up', () => {
