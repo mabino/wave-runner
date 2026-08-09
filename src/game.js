@@ -47,9 +47,13 @@ const DEFAULTS = {
   planeMaxGap: 40,
   powerupDropDelay: 1.6,    // plane heard -> item splashes down
   powerupTtl: 12,           // seconds before an item washes away
-  collectRadius: 16,
+  pickupRadius: 4.5,        // must actually intersect an item to grab it
   sunscreenHeal: 35,
-  buffDurations: { bodysuit: 45, bodyboard: 20 },
+  buffDurations: { bodysuit: 45, bodyboard: 20, blanket: 30 },
+
+  shoveRadius: 8,           // arm's reach for shoving another beachgoer
+  shoveCooldown: 3,
+  shoveDamage: 5,
 };
 
 // Per-size wave characteristics. Bigger waves run faster, hit harder and pay
@@ -122,7 +126,8 @@ class WaveRunnerGame {
       pendingRest: false,
       pendingPickup: null,
       washedUntil: 0,
-      buffs: { bodysuit: 0, bodyboard: 0 },
+      buffs: { bodysuit: 0, bodyboard: 0, blanket: 0 },
+      shoveReadyAt: 0,
       outSince: null,
       whistled: false,
       eliminatedAtHour: null,
@@ -199,7 +204,9 @@ class WaveRunnerGame {
     if (!p || p.state === 'out' || p.state === 'washed' || this.phase !== 'running') return;
     const pu = this.powerups.find(u => u.id === powerupId);
     if (!pu) return;
-    if (this._dist(p, pu) <= this.cfg.collectRadius) {
+    // Tapping never grabs at range: it marks the item and walks the player
+    // over; collection happens only on intersection.
+    if (this._dist(p, pu) <= this.cfg.pickupRadius) {
       this._collect(p, pu);
     } else {
       if (p.state === 'resting') p.state = 'idle';
@@ -207,6 +214,34 @@ class WaveRunnerGame {
       p.pendingPickup = pu.id;
       p.target = { x: pu.x, y: pu.y };
     }
+  }
+
+  handleShove(id) {
+    const p = this.players[id];
+    if (!p || p.state !== 'idle' || this.phase !== 'running') return;
+    if (this.t < p.shoveReadyAt) return;
+
+    // Nearest other beachgoer within arm's reach who is in the water.
+    let target = null;
+    let best = this.cfg.shoveRadius;
+    for (const q of this._alivePlayers()) {
+      if (q.id === id || q.state === 'washed' || q.y >= this.cfg.beachY) continue;
+      const d = this._dist(p, q);
+      if (d <= best) { best = d; target = q; }
+    }
+    if (!target) return;
+
+    p.shoveReadyAt = this.t + this.cfg.shoveCooldown;
+
+    if (this.t < target.buffs.blanket) {
+      this._emit({ type: 'shove', shoverId: id, playerId: target.id, blocked: true });
+      return;
+    }
+
+    target.streak = 0;
+    this._washAshore(target);
+    this._emit({ type: 'shove', shoverId: id, playerId: target.id, blocked: false });
+    this._applyDamage(target, this.cfg.shoveDamage, 'shove');
   }
 
   // ─── Simulation ───────────────────────────────────────────────────────────
@@ -241,6 +276,19 @@ class WaveRunnerGame {
   _emit(ev) { this.events.push({ ...ev, t: this.t }); }
 
   _dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+  // Dump a player onto the sand, briefly stunned — the shared fate of
+  // wipeouts, lifeguard hauls, and shoves.
+  _washAshore(p, clampX = null) {
+    if (clampX) p.x = Math.max(clampX[0], Math.min(clampX[1], p.x));
+    p.y = this.cfg.beachY + 8;
+    p.state = 'washed';
+    p.washedUntil = this.t + this.cfg.washStunSec;
+    p.target = null;
+    p.action = null;
+    p.pendingRest = false;
+    p.pendingPickup = null;
+  }
 
   _alivePlayers() {
     return Object.values(this.players).filter(p => p.state !== 'out');
@@ -306,13 +354,7 @@ class WaveRunnerGame {
     } else {
       p.streak = 0;
       // Wiped out: washed up on the sand to sit it out for a moment.
-      p.y = this.cfg.beachY + 8;
-      p.state = 'washed';
-      p.washedUntil = this.t + this.cfg.washStunSec;
-      p.target = null;
-      p.action = null;
-      p.pendingRest = false;
-      p.pendingPickup = null;
+      this._washAshore(p);
       this._emit({ type: 'wave-result', playerId: p.id, outcome: 'wiped', size: w.size });
       this._applyDamage(p, spec.damage, 'wave');
     }
@@ -358,7 +400,7 @@ class WaveRunnerGame {
         const pu = this.powerups.find(u => u.id === p.pendingPickup);
         if (!pu) {
           p.pendingPickup = null;
-        } else if (this._dist(p, pu) <= this.cfg.collectRadius) {
+        } else if (this._dist(p, pu) <= this.cfg.pickupRadius) {
           this._collect(p, pu);
           p.pendingPickup = null;
         }
@@ -389,12 +431,7 @@ class WaveRunnerGame {
       }
       if (overdue >= this.cfg.outPenaltySec) {
         // Hauled back to the sand, shaken and docked.
-        p.x = Math.max(40, Math.min(60, p.x));
-        p.y = this.cfg.beachY + 10;
-        p.state = 'washed';
-        p.washedUntil = this.t + this.cfg.washStunSec;
-        p.target = null;
-        p.action = null;
+        this._washAshore(p, [40, 60]);
         p.outSince = null;
         p.whistled = false;
         this._emit({ type: 'lifeguard-penalty', playerId: p.id });
@@ -438,7 +475,7 @@ class WaveRunnerGame {
     if (this.pendingDropAt !== null && this.t >= this.pendingDropAt) {
       this.pendingDropAt = null;
       const r = this.rng();
-      const type = r < 0.45 ? 'sunscreen' : r < 0.75 ? 'bodyboard' : 'bodysuit';
+      const type = r < 0.35 ? 'sunscreen' : r < 0.6 ? 'bodyboard' : r < 0.8 ? 'bodysuit' : 'blanket';
       const pu = {
         id: `p${this.seq++}`,
         type,
@@ -537,6 +574,7 @@ class WaveRunnerGame {
         buffs: {
           bodysuit: Math.max(0, Math.round((p.buffs.bodysuit - this.t) * 10) / 10),
           bodyboard: Math.max(0, Math.round((p.buffs.bodyboard - this.t) * 10) / 10),
+          blanket: Math.max(0, Math.round((p.buffs.blanket - this.t) * 10) / 10),
         },
       })),
       waves: this.waves.map(w => ({ id: w.id, size: w.size, y: Math.round(w.y * 10) / 10, wobble: w.wobble })),

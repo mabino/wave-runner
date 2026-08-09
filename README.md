@@ -25,7 +25,12 @@ Playable on iPhone/iPad Safari in portrait or landscape. Served at
   safe, but no points.
 - **Banner planes** pass overhead (propeller sound); tappable power-ups
   splash down: 🧴 sunscreen (+HP), 🦺 body suit (lightning immunity),
-  🛹 body board (ride any wave for a while).
+  🛹 body board (ride any wave for a while), 🧺 beach blanket (shove-proof).
+  Tapping an item walks your beachgoer over — you must actually reach it
+  to pick it up.
+- **Shove** (🫸 button): knock a nearby swimmer out of the water and back
+  onto the beach — breaking their streak and chipping their HP — unless
+  their beach blanket is spread out. Short cooldown between shoves.
 - A player is out when their HP hits zero. The game ends when everyone is
   out or the clock hits 7 PM; the tally crowns the **Best on the Beach**.
 

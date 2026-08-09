@@ -337,7 +337,7 @@ describe('banner plane power-ups', () => {
     expect(game.powerups.length).toBe(0);
   });
 
-  test('tapping a nearby sunscreen bottle heals', () => {
+  test('tapping an intersecting sunscreen bottle heals', () => {
     const game = makeGame();
     const p = addSwimmer(game);
     p.hp = 40;
@@ -348,26 +348,119 @@ describe('banner plane power-ups', () => {
     expect(game.powerups.length).toBe(0);
   });
 
-  test('tapping a distant item walks over and collects on arrival', () => {
+  test('tapping a distant item walks over and collects on intersection', () => {
     const game = makeGame();
     const p = addSwimmer(game, 'p1', 80, 30);
     game.powerups.push({ id: 'pu1', type: 'bodyboard', x: 70, y: 80, expiresAt: 1000 });
     game.handleTapPowerup('p1', 'pu1');
-    expect(game.powerups.length).toBe(1);   // too far to grab instantly
+    expect(game.powerups.length).toBe(1);   // no grabbing at range
     run(game, 4);
     expect(game.powerups.length).toBe(0);
     expect(p.buffs.bodyboard).toBeGreaterThan(game.t);
   });
 
-  test('bodysuit and bodyboard grant timed buffs', () => {
+  test('a tap alone never collects an item the player has not reached', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 80, 20);
+    p.hp = 40;
+    game.powerups.push({ id: 'pu1', type: 'sunscreen', x: 80, y: 80, expiresAt: 1000 });
+    game.handleTapPowerup('p1', 'pu1');
+    run(game, 0.3);                          // barely a step toward it
+    expect(game.powerups.length).toBe(1);
+    expect(p.hp).toBe(40);
+    expect(p.powerupsCollected).toBe(0);
+  });
+
+  test('bodysuit, bodyboard, and blanket grant timed buffs', () => {
     const game = makeGame();
     const p = addSwimmer(game);
     game.powerups.push({ id: 'a', type: 'bodysuit', x: p.x, y: p.y, expiresAt: 1000 });
     game.powerups.push({ id: 'b', type: 'bodyboard', x: p.x, y: p.y, expiresAt: 1000 });
+    game.powerups.push({ id: 'c', type: 'blanket', x: p.x, y: p.y, expiresAt: 1000 });
     game.handleTapPowerup('p1', 'a');
     game.handleTapPowerup('p1', 'b');
+    game.handleTapPowerup('p1', 'c');
     expect(p.buffs.bodysuit).toBeCloseTo(game.t + game.cfg.buffDurations.bodysuit);
     expect(p.buffs.bodyboard).toBeCloseTo(game.t + game.cfg.buffDurations.bodyboard);
+    expect(p.buffs.blanket).toBeCloseTo(game.t + game.cfg.buffDurations.blanket);
+  });
+});
+
+describe('shoving', () => {
+  function pair(game, dist = 5) {
+    const a = addSwimmer(game, 'attacker', 40, 50);
+    const b = addSwimmer(game, 'victim', 40, 50 + dist);
+    return [a, b];
+  }
+
+  test('a shove knocks a nearby swimmer out of the water and onto the beach', () => {
+    const game = makeGame();
+    const [a, b] = pair(game);
+    b.streak = 4;
+    game.handleShove('attacker');
+    const events = run(game, 0.2);
+    const shove = events.find(e => e.type === 'shove');
+    expect(shove).toMatchObject({ shoverId: 'attacker', playerId: 'victim', blocked: false });
+    expect(b.state).toBe('washed');
+    expect(b.y).toBeGreaterThanOrEqual(game.cfg.beachY);
+    expect(b.streak).toBe(0);
+    expect(b.hp).toBe(100 - game.cfg.shoveDamage);
+    expect(a.hp).toBe(100);
+    expect(a.state).toBe('idle');
+  });
+
+  test('a beach blanket blocks the shove', () => {
+    const game = makeGame();
+    const [, b] = pair(game);
+    b.buffs.blanket = 1000;
+    game.handleShove('attacker');
+    const events = run(game, 0.2);
+    expect(events.find(e => e.type === 'shove').blocked).toBe(true);
+    expect(b.state).toBe('idle');
+    expect(b.y).toBeLessThan(game.cfg.beachY);   // still in the water
+    expect(b.hp).toBe(100);
+  });
+
+  test('shoving is rate-limited by a cooldown', () => {
+    const game = makeGame();
+    pair(game);
+    game.handleShove('attacker');
+    run(game, 0.2);
+    // Victim recovers and wades back out.
+    game.players.victim.state = 'idle';
+    game.players.victim.y = 40;
+    game.players.victim.x = 52;
+    game.handleShove('attacker');            // still cooling down
+    const events = run(game, 0.2);
+    expect(events.find(e => e.type === 'shove')).toBeUndefined();
+    run(game, game.cfg.shoveCooldown);
+    game.handleShove('attacker');
+    expect(run(game, 0.2).find(e => e.type === 'shove')).toBeDefined();
+  });
+
+  test('players on the sand cannot be shoved', () => {
+    const game = makeGame();
+    addSwimmer(game, 'attacker', 75, 50);
+    addSwimmer(game, 'victim', 78, 52);      // both on the beach
+    game.handleShove('attacker');
+    expect(run(game, 0.2).find(e => e.type === 'shove')).toBeUndefined();
+  });
+
+  test('a shove needs the target within reach', () => {
+    const game = makeGame();
+    pair(game, game.cfg.shoveRadius + 5);
+    game.handleShove('attacker');
+    expect(run(game, 0.2).find(e => e.type === 'shove')).toBeUndefined();
+  });
+
+  test('a shove can eliminate a swimmer on their last legs', () => {
+    const game = makeGame();
+    const [, b] = pair(game);
+    b.hp = game.cfg.shoveDamage;
+    game.handleShove('attacker');
+    const events = run(game, 0.2);
+    expect(events.find(e => e.type === 'eliminated')).toMatchObject({ playerId: 'victim', cause: 'shove' });
+    expect(b.state).toBe('out');
   });
 });
 

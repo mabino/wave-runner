@@ -275,7 +275,7 @@
     ctx.font = '17px system-ui';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const icon = u.type === 'sunscreen' ? '🧴' : u.type === 'bodysuit' ? '🦺' : '🛹';
+    const icon = { sunscreen: '🧴', bodysuit: '🦺', bodyboard: '🛹', blanket: '🧺' }[u.type] || '🎁';
     ctx.fillText(icon, x, y + bob + 1);
   }
 
@@ -351,6 +351,7 @@
     let pip = '';
     if (p.buffs.bodysuit > 0) pip += '🦺';
     if (p.buffs.bodyboard > 0) pip += '🛹';
+    if (p.buffs.blanket > 0) pip += '🧺';
     if (pip) {
       ctx.font = '10px system-ui';
       ctx.fillText(pip, x, y - h * 1.02 + 12);

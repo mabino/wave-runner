@@ -237,6 +237,7 @@
     const buffs = [];
     if (me.buffs.bodysuit > 0) buffs.push(`🦺 ${Math.ceil(me.buffs.bodysuit)}s`);
     if (me.buffs.bodyboard > 0) buffs.push(`🛹 ${Math.ceil(me.buffs.bodyboard)}s`);
+    if (me.buffs.blanket > 0) buffs.push(`🧺 ${Math.ceil(me.buffs.blanket)}s`);
     $('hud-buffs').innerHTML = buffs.map(b => `<span class="buff-chip">${b}</span>`).join('');
 
     $('btn-rest').classList.toggle('on', me.state === 'resting');
@@ -268,6 +269,15 @@
   bindAction('btn-jump', 'jump', () => Beach.sfx.jump());
   bindAction('btn-dive', 'dive', () => Beach.sfx.dive());
   bindAction('btn-stand', 'stand', null);
+  $('btn-shove').addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    socket.emit('game:shove');
+    // Mirror the server cooldown so the button telegraphs readiness.
+    const btn = $('btn-shove');
+    btn.disabled = true;
+    btn.style.opacity = '.45';
+    setTimeout(() => { btn.disabled = false; btn.style.opacity = ''; }, 3000);
+  });
   $('btn-rest').addEventListener('pointerdown', (e) => {
     e.preventDefault();
     socket.emit('game:rest');
@@ -409,8 +419,24 @@
       case 'powerup-collected': {
         if (mine) {
           Beach.sfx.pickup();
-          const label = { sunscreen: '🧴 Sunscreen! +HP', bodysuit: '🦺 Body suit! Lightning-proof', bodyboard: '🛹 Body board! Ride anything' }[ev.powerupType];
+          const label = {
+            sunscreen: '🧴 Sunscreen! +HP',
+            bodysuit: '🦺 Body suit! Lightning-proof',
+            bodyboard: '🛹 Body board! Ride anything',
+            blanket: '🧺 Beach blanket! Shove-proof',
+          }[ev.powerupType];
           toast(label, 'warn');
+        }
+        break;
+      }
+      case 'shove': {
+        if (ev.blocked) {
+          if (ev.shoverId === state.myId) toast('🧺 Their beach blanket held firm!', 'warn');
+          if (mine) toast('🧺 Your blanket blocked a shove!', 'warn');
+        } else {
+          Beach.sfx.bigSplash();
+          if (mine) toast(`🫸 ${snapName(ev.shoverId)} shoved you back to the beach!`, 'danger');
+          else if (ev.shoverId === state.myId) toast(`🫸 You shoved ${snapName(ev.playerId)} ashore!`);
         }
         break;
       }

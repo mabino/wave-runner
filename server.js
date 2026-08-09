@@ -161,6 +161,11 @@ io.on('connection', (socket) => {
     room?.game?.handleAction(socket.id, type);
   });
 
+  socket.on('game:shove', () => {
+    const room = roomManager.getRoomByPlayer(socket.id);
+    room?.game?.handleShove(socket.id);
+  });
+
   socket.on('game:rest', () => {
     const room = roomManager.getRoomByPlayer(socket.id);
     room?.game?.handleRest(socket.id);
