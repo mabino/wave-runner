@@ -1,0 +1,265 @@
+/* ─────────────────────────────────────────────────────────────────────────
+ * sprites.js — 16-bit style beachgoer caricatures, drawn from pixel maps.
+ *
+ * Each archetype is a 12×16 template. Legend:
+ *   .  transparent      S  skin (player-picked)   O  outfit (player-picked)
+ *   H  hair             A  accessory accent        W  white
+ *   K  dark detail/outline
+ * ───────────────────────────────────────────────────────────────────────── */
+(function () {
+  'use strict';
+
+  const SKIN_TONES = ['#f8d0a8', '#e8b184', '#b97a50', '#7a4b2a'];
+  const OUTFITS = ['#e0403c', '#1e6ee0', '#18a558', '#f28c1b', '#8a4fd8', '#0aa5a0'];
+
+  const ARCHETYPES = [
+    {
+      name: 'Surfer Dude',
+      hair: '#e8c26a',
+      accent: '#7a4b2a',   // puka shells
+      rows: [
+        '....HHHH....',
+        '...HHHHHH...',
+        '...HSSSSH...',
+        '...HSKSKH...',
+        '...HSSSSH...',
+        '...H.SS.H...',
+        '....AAAA....',
+        '..SSSSSSSS..',
+        '.S..SSSS..S.',
+        '.S..SSSS..S.',
+        '....SSSS....',
+        '...OOOOOO...',
+        '...OOOOOO...',
+        '....S..S....',
+        '....S..S....',
+        '....K..K....',
+      ],
+    },
+    {
+      name: 'Boogie Kid',
+      hair: '#3b2a1a',
+      accent: '#ffd97b',   // backwards cap
+      rows: [
+        '............',
+        '....AAAA....',
+        '...AAAAAA...',
+        '...ASSSSA...',
+        '....SKSK....',
+        '....SSSS....',
+        '.....SS.....',
+        '...OOOOOO...',
+        '..S.OOOO.S..',
+        '..S.OOOO.S..',
+        '....OOOO....',
+        '....OOOO....',
+        '....S..S....',
+        '....S..S....',
+        '....K..K....',
+        '............',
+      ],
+    },
+    {
+      name: 'Beach Granny',
+      hair: '#e6e6e6',
+      accent: '#ffffff',   // flower print
+      rows: [
+        '....HHHH....',
+        '...HHHHHH...',
+        '...HSSSSH...',
+        '...HSKSKH...',
+        '....SSSS....',
+        '.....SS.....',
+        '...OOOOOO...',
+        '..S.OAOO.S..',
+        '..S.OOAO.S..',
+        '...OOOOOO...',
+        '...OOAOOO...',
+        '...OOOOOO...',
+        '....S..S....',
+        '....S..S....',
+        '....K..K....',
+        '............',
+      ],
+    },
+    {
+      name: 'Muscle Mike',
+      hair: '#1c1c1c',
+      accent: '#ffffff',   // tank stripe
+      rows: [
+        '....HHHH....',
+        '...HSSSSH...',
+        '...HSKSKH...',
+        '....SSSS....',
+        '.....SS.....',
+        '..SSOOOOSS..',
+        '.SSSOAAOSSS.',
+        '.SS.OOOO.SS.',
+        '.SS.OOOO.SS.',
+        '....OOOO....',
+        '...OOOOOO...',
+        '...OOOOOO...',
+        '...SS..SS...',
+        '...SS..SS...',
+        '...KK..KK...',
+        '............',
+      ],
+    },
+    {
+      name: 'Tourist Tim',
+      hair: '#6b4a2a',
+      accent: '#fff3c4',   // bucket hat + shirt flowers
+      rows: [
+        '....AAAA....',
+        '...AAAAAA...',
+        '..AAAAAAAA..',
+        '...SSSSSS...',
+        '...SKSSKS...',
+        '....SSSS....',
+        '...OOOOOO...',
+        '..SOAOOAOS..',
+        '..S.OOOO.S..',
+        '..KKOOAOKK..',
+        '...OOOOOO...',
+        '....WWWW....',
+        '....W..W....',
+        '....S..S....',
+        '....K..K....',
+        '............',
+      ],
+    },
+    {
+      name: 'Sun Seeker',
+      hair: '#c2452d',
+      accent: '#1c1c1c',   // big shades
+      rows: [
+        '....HHHH....',
+        '...HHHHHH...',
+        '..HHSSSSHH..',
+        '..HAAKAAKH..',
+        '..H.SSSS.H..',
+        '..H..SS..H..',
+        '..H.OOOO.H..',
+        '..HS.SS.SH..',
+        '..HS.SS.SH..',
+        '..H.SSSS.H..',
+        '....OOOO....',
+        '....OOOO....',
+        '....S..S....',
+        '....S..S....',
+        '....K..K....',
+        '............',
+      ],
+    },
+    {
+      name: 'Sandcastle Sam',
+      hair: '#f2d16b',
+      accent: '#e0403c',   // pail
+      rows: [
+        '............',
+        '....HHHH....',
+        '...HHHHHH...',
+        '...HSSSSH...',
+        '....SKSK....',
+        '....SSSS....',
+        '.....SS.....',
+        '...OWOWOW...',
+        '..S.WOWOW.S.',
+        '..S.OWOWO.AA',
+        '....WOWOW.AA',
+        '....OWOWO...',
+        '....S..S....',
+        '....S..S....',
+        '....K..K....',
+        '............',
+      ],
+    },
+    {
+      name: 'Salty Skipper',
+      hair: '#ffffff',
+      accent: '#123a63',   // captain's cap
+      rows: [
+        '....AAAA....',
+        '...AAAAAA...',
+        '...AWWWWA...',
+        '...SSSSSS...',
+        '...SKSSKS...',
+        '...HSSSSH...',
+        '...HHSSHH...',
+        '....HHHH....',
+        '...OOOOOO...',
+        '..S.OOOO.S..',
+        '..S.OWWO.S..',
+        '...OOOOOO...',
+        '...OOOOOO...',
+        '....S..S....',
+        '....S..S....',
+        '....K..K....',
+      ],
+    },
+  ];
+
+  const SPRITE_W = 12;
+  const SPRITE_H = 16;
+
+  function paletteFor(archetype, skinIdx, outfitIdx) {
+    const arch = ARCHETYPES[archetype] || ARCHETYPES[0];
+    return {
+      S: SKIN_TONES[skinIdx] || SKIN_TONES[0],
+      O: OUTFITS[outfitIdx] || OUTFITS[0],
+      H: arch.hair,
+      A: arch.accent,
+      W: '#ffffff',
+      K: '#20242c',
+    };
+  }
+
+  // Cache rendered sprites: one offscreen canvas per (archetype, skin, outfit).
+  const cache = new Map();
+
+  function spriteCanvas(archetype, skinIdx, outfitIdx) {
+    const key = `${archetype}-${skinIdx}-${outfitIdx}`;
+    if (cache.has(key)) return cache.get(key);
+
+    const arch = ARCHETYPES[archetype] || ARCHETYPES[0];
+    const pal = paletteFor(archetype, skinIdx, outfitIdx);
+    const canvas = document.createElement('canvas');
+    canvas.width = SPRITE_W;
+    canvas.height = SPRITE_H;
+    const ctx = canvas.getContext('2d');
+    arch.rows.forEach((row, y) => {
+      for (let x = 0; x < SPRITE_W; x++) {
+        const c = pal[row[x]];
+        if (!c) continue;
+        ctx.fillStyle = c;
+        ctx.fillRect(x, y, 1, 1);
+      }
+    });
+    cache.set(key, canvas);
+    return canvas;
+  }
+
+  // Draw an avatar scaled into a destination canvas (for pickers/lists).
+  function drawInto(dest, avatar) {
+    const ctx = dest.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, dest.width, dest.height);
+    const scale = Math.min(dest.width / SPRITE_W, dest.height / SPRITE_H);
+    const w = SPRITE_W * scale;
+    const h = SPRITE_H * scale;
+    ctx.drawImage(
+      spriteCanvas(avatar.archetype, avatar.skin, avatar.outfit),
+      (dest.width - w) / 2, (dest.height - h) / 2, w, h
+    );
+  }
+
+  window.Sprites = {
+    ARCHETYPES,
+    SKIN_TONES,
+    OUTFITS,
+    SPRITE_W,
+    SPRITE_H,
+    spriteCanvas,
+    drawInto,
+  };
+})();

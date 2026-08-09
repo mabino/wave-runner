@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Wave Runner 🌊</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ── Home: name, avatar, create/join ─────────────────────────────── -->
+  <section id="screen-home" class="screen active">
+    <div class="panel">
+      <h1 class="title">🌊 Wave Runner</h1>
+      <p class="tagline">Survive the surf until sundown</p>
+
+      <input id="player-name" type="text" maxlength="20" placeholder="Your beach name"
+             autocomplete="off" autocapitalize="words">
+
+      <div class="avatar-picker">
+        <div class="picker-row">
+          <canvas id="avatar-preview" width="72" height="96"></canvas>
+          <div class="picker-col">
+            <div id="archetype-name" class="archetype-name"></div>
+            <div id="archetype-grid" class="archetype-grid"></div>
+          </div>
+        </div>
+        <div class="swatch-row"><span class="swatch-label">Skin</span><div id="skin-swatches" class="swatches"></div></div>
+        <div class="swatch-row"><span class="swatch-label">Suit</span><div id="outfit-swatches" class="swatches"></div></div>
+      </div>
+
+      <button id="btn-create" class="btn primary">Claim a Beach</button>
+      <div class="join-row">
+        <input id="join-code" type="text" maxlength="6" placeholder="ROOM CODE" autocomplete="off"
+               autocapitalize="characters" spellcheck="false">
+        <button id="btn-join" class="btn">Join</button>
+      </div>
+      <div id="home-error" class="error hidden"></div>
+    </div>
+  </section>
+
+  <!-- ── Lobby ───────────────────────────────────────────────────────── -->
+  <section id="screen-lobby" class="screen">
+    <div class="panel">
+      <h2>Beach <span id="lobby-code" class="room-code"></span></h2>
+      <p class="hint">Share the code — up to 8 beachgoers</p>
+      <div id="lobby-players" class="lobby-players"></div>
+
+      <div id="host-controls" class="host-controls hidden">
+        <label class="cfg-label">Day length</label>
+        <div id="daylen-options" class="seg">
+          <button data-len="quick" class="seg-btn">Quick · 4m</button>
+          <button data-len="classic" class="seg-btn on">Classic · 7m</button>
+          <button data-len="marathon" class="seg-btn">Marathon · 10m</button>
+        </div>
+        <button id="btn-start" class="btn primary">Hit the Waves</button>
+      </div>
+      <p id="guest-waiting" class="hint hidden">Waiting for the host to open the beach…</p>
+      <button id="btn-leave-lobby" class="btn subtle">Leave</button>
+      <div id="lobby-error" class="error hidden"></div>
+    </div>
+  </section>
+
+  <!-- ── Game ────────────────────────────────────────────────────────── -->
+  <section id="screen-game" class="screen">
+    <canvas id="game-canvas"></canvas>
+
+    <div id="hud">
+      <div id="hud-top">
+        <div id="hud-clock" class="hud-chip">☀️ 9:00 AM</div>
+        <div id="hud-forecast" class="hud-chip" title="Next two hours"></div>
+        <button id="btn-sound" class="hud-chip hud-btn" aria-label="Toggle sound">🔊</button>
+      </div>
+      <div id="hud-status">
+        <div id="hp-wrap"><div id="hp-bar"></div><span id="hp-label">100</span></div>
+        <div id="hud-score" class="hud-chip">0 pts</div>
+        <div id="hud-buffs"></div>
+      </div>
+      <div id="toasts"></div>
+    </div>
+
+    <div id="controls">
+      <button id="btn-jump" class="ctl">🦵<span>Jump</span></button>
+      <button id="btn-dive" class="ctl">🤿<span>Dive</span></button>
+      <button id="btn-stand" class="ctl">🧍<span>Stand</span></button>
+      <button id="btn-rest" class="ctl rest">⛱️<span>Rest</span></button>
+    </div>
+  </section>
+
+  <!-- ── End of day ──────────────────────────────────────────────────── -->
+  <section id="screen-over" class="screen">
+    <div class="panel wide">
+      <h2 id="over-title">🌅 End of the Day</h2>
+      <div id="over-best" class="best-banner"></div>
+      <div id="over-table"></div>
+      <div id="over-superlatives" class="superlatives"></div>
+      <div id="rematch-status" class="hint"></div>
+      <button id="btn-rematch" class="btn primary">One More Day</button>
+      <button id="btn-back-home" class="btn subtle">Leave the Beach</button>
+    </div>
+  </section>
+
+  <script src="socket.io/socket.io.js"></script>
+  <script src="sprites.js"></script>
+  <script src="audio.js"></script>
+  <script src="game-client.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
