@@ -60,12 +60,16 @@ const DEFAULTS = {
   shoveCooldown: 3,
   shoveDamage: 5,
 
-  // Wildlife hazards.
+  // Wildlife hazards. Gaps are deliberately short — a beach day is only a
+  // few real minutes, and creatures that first appear a minute in are
+  // effectively invisible to players who wipe out early.
   hazardRadius: 5,
-  sharkMinGap: 45,  sharkMaxGap: 80,  sharkSpeed: 22, sharkDamage: 30,
-  jellyMinGap: 25,  jellyMaxGap: 45,  jellyTtl: 20,   jellyDamage: 12,
-  crabMinGap: 30,   crabMaxGap: 60,   crabSpeed: 7,   crabDamage: 6,
-  gullMinGap: 18,   gullMaxGap: 32,   gullSnatchDelay: 1.5,
+  sharkMinGap: 30,  sharkMaxGap: 60,  sharkSpeed: 22, sharkDamage: 30,
+  jellyMinGap: 15,  jellyMaxGap: 30,  jellyTtl: 20,   jellyDamage: 12,
+  crabMinGap: 12,   crabMaxGap: 30,   crabSpeed: 7,   crabDamage: 6,
+  // The gull polls often; a raid fires whenever an unclaimed item is on the
+  // ground, with a telegraph long enough for a nearby player to win the race.
+  gullMinGap: 6,    gullMaxGap: 12,   gullSnatchDelay: 2.5,
 };
 
 // Per-size wave characteristics. Bigger waves run faster, hit harder and pay
