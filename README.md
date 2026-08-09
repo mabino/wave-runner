@@ -44,6 +44,12 @@ on desktop (tap or WASD/arrow keys). Served at `binolabs.com/waves/`.
 - In a **multiplayer** game, the last beachgoer still standing wins the
   day by default; solo days run until the clock or the ocean says
   otherwise.
+- **Stand** doubles as a bail-out: cancelling a mistimed jump/dive
+  collapses most of the cooldown so a quick correction is possible.
+- **Beach bullies** (lobby option): up to three computer beachgoers —
+  Mellow Mel, Pushy Pete, and Big Bruiser — with rising aggression. They
+  read waves, chase power-ups, nap when battered, flee storms (the meaner,
+  the later), and shove anyone in reach.
 - A player is out when their HP hits zero. The game ends when everyone is
   out or the clock hits 7 PM; the tally crowns the **Best on the Beach**.
 

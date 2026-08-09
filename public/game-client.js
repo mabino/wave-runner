@@ -275,22 +275,26 @@
     const x = sx(h.x), y = sy(h.y);
     const t = performance.now() / 1000;
     if (h.kind === 'shark') {
+      // Just a fin slicing the surface — the menace is in what you can't see.
+      const dir = h.vx >= 0 ? 1 : -1;
       // Wake trail behind the fin.
       ctx.strokeStyle = 'rgba(255,255,255,.5)';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      const dir = h.vx >= 0 ? -1 : 1;
-      ctx.moveTo(x + dir * 12, y + 2);
-      ctx.lineTo(x + dir * 34, y + 2 + Math.sin(t * 6) * 2);
+      ctx.moveTo(x - dir * 12, y + 2);
+      ctx.lineTo(x - dir * 34, y + 2 + Math.sin(t * 6) * 2);
       ctx.stroke();
-      ctx.save();
-      ctx.translate(x, y);
-      if (h.vx < 0) ctx.scale(-1, 1);
-      ctx.font = '22px system-ui';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('🦈', 0, 0);
-      ctx.restore();
+      // Curved triangular dorsal fin, leaning into the direction of travel.
+      ctx.fillStyle = '#4a5a66';
+      ctx.beginPath();
+      ctx.moveTo(x - dir * 8, y + 3);
+      ctx.quadraticCurveTo(x - dir * 4, y - 6, x + dir * 2, y - 13);
+      ctx.quadraticCurveTo(x + dir * 5, y - 6, x + dir * 8, y + 3);
+      ctx.closePath();
+      ctx.fill();
+      // Waterline slice where the fin cuts the surface.
+      ctx.fillStyle = 'rgba(255,255,255,.75)';
+      ctx.fillRect(x - 11, y + 2, 22, 2);
     } else if (h.kind === 'jelly') {
       // Hand-drawn so older devices don't render a tofu box.
       const bob = Math.sin(t * 2.2 + h.x) * 2.5;
@@ -419,7 +423,7 @@
     ctx.fillStyle = p.id === myId ? '#ffd97b' : 'rgba(255,255,255,.92)';
     ctx.strokeStyle = 'rgba(0,0,0,.5)';
     ctx.lineWidth = 2.5;
-    const label = (p.id === myId ? '▾ ' : '') + p.name + (p.state === 'out' ? ' ✕' : '');
+    const label = (p.id === myId ? '▾ ' : '') + (p.npc ? '🤖 ' : '') + p.name + (p.state === 'out' ? ' ✕' : '');
     ctx.strokeText(label, x, y - h * 1.02);
     ctx.fillText(label, x, y - h * 1.02);
 

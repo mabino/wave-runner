@@ -172,12 +172,20 @@
     $('guest-waiting').classList.toggle('hidden', amHost);
     [...$('daylen-options').children].forEach(b =>
       b.classList.toggle('on', b.dataset.len === room.config.dayLength));
+    [...$('npc-options').children].forEach(b =>
+      b.classList.toggle('on', Number(b.dataset.npc) === (room.config.npcs || 0)));
   }
 
   $('daylen-options').addEventListener('click', (e) => {
     const len = e.target.dataset?.len;
     if (!len) return;
     socket.emit('game:configure', { config: { dayLength: len } });
+  });
+
+  $('npc-options').addEventListener('click', (e) => {
+    const n = e.target.dataset?.npc;
+    if (n === undefined) return;
+    socket.emit('game:configure', { config: { npcs: Number(n) } });
   });
 
   $('btn-start').addEventListener('click', () => {
@@ -354,7 +362,7 @@
       row.innerHTML = `
         <span class="tally-rank">${i + 1}</span>
         <canvas width="24" height="32"></canvas>
-        <span class="tally-name">${esc(r.name)}</span>
+        <span class="tally-name">${r.npc ? '🤖 ' : ''}${esc(r.name)}</span>
         <span class="tally-stats">🌊${r.wavesRidden} · 🔥${r.bestStreak} · 🎁${r.powerupsCollected} · ${status}</span>
         <span class="tally-score">${r.score}</span>`;
       table.appendChild(row);
@@ -408,6 +416,9 @@
 
   socket.on('game:state', (snap) => {
     if (!state.playing) return;
+    // Keep an id -> name map so event toasts can name NPCs too.
+    state.names = {};
+    for (const p of snap.players) state.names[p.id] = (p.npc ? '🤖 ' : '') + p.name;
     GameRenderer.setSnapshot(snap, state.myId);
     renderHud(snap);
   });
@@ -415,10 +426,8 @@
   socket.on('game:event', (ev) => {
     if (!state.playing) return;
     const mine = ev.playerId === state.myId;
-    const snapName = (id) => {
-      const p = state.room?.players.find(pl => pl.id === id);
-      return p ? p.name : 'Someone';
-    };
+    const snapName = (id) =>
+      state.names?.[id] || state.room?.players.find(pl => pl.id === id)?.name || 'Someone';
 
     switch (ev.type) {
       case 'wave-result': {

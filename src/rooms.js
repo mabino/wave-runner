@@ -23,6 +23,7 @@ class Room {
     };
     this.config = {
       dayLength: 'classic',   // 'quick' | 'classic' | 'marathon'
+      npcs: 0,                // 0-3 computer beachgoers of rising menace
     };
     this.phase = 'lobby';     // 'lobby' | 'playing' | 'over'
     this.game = null;         // WaveRunnerGame instance while playing
@@ -47,7 +48,9 @@ class Room {
   }
 
   setConfig(cfg) {
-    if (cfg && DAY_LENGTHS[cfg.dayLength]) this.config.dayLength = cfg.dayLength;
+    if (!cfg) return;
+    if (DAY_LENGTHS[cfg.dayLength]) this.config.dayLength = cfg.dayLength;
+    if (Number.isInteger(cfg.npcs) && cfg.npcs >= 0 && cfg.npcs <= 3) this.config.npcs = cfg.npcs;
   }
 
   dayLengthSec() { return DAY_LENGTHS[this.config.dayLength]; }
@@ -82,6 +85,7 @@ class Room {
       p.rematch = false;
       this.game.addPlayer(p.id, p.name, p.avatar);
     }
+    if (this.config.npcs) this.game.addNpcs(this.config.npcs);
     return this.game;
   }
 

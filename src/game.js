@@ -92,6 +92,14 @@ const WAVE_TYPES = {
 
 const WEATHER = ['sunny', 'cloudy', 'storm'];
 
+// Optional computer-controlled beachgoers, in escalating order of menace.
+// aggression drives shoving and prey-stalking; skill drives wave reading.
+const NPC_ROSTER = [
+  { id: 'npc-mel',     name: 'Mellow Mel',  aggression: 0.25, avatar: { archetype: 5, skin: 1, outfit: 2 } },
+  { id: 'npc-pete',    name: 'Pushy Pete',  aggression: 0.55, avatar: { archetype: 1, skin: 0, outfit: 3 } },
+  { id: 'npc-bruiser', name: 'Big Bruiser', aggression: 0.9,  avatar: { archetype: 3, skin: 2, outfit: 0 } },
+];
+
 class WaveRunnerGame {
   constructor(config = {}, rng = Math.random) {
     this.cfg = { ...DEFAULTS, ...config };
@@ -171,6 +179,17 @@ class WaveRunnerGame {
 
   removePlayer(id) { delete this.players[id]; }
 
+  addNpcs(count) {
+    for (const spec of NPC_ROSTER.slice(0, Math.max(0, Math.min(NPC_ROSTER.length, count)))) {
+      this.addPlayer(spec.id, spec.name, spec.avatar);
+      this.players[spec.id].npc = {
+        aggression: spec.aggression,
+        skill: 0.55 + 0.25 * spec.aggression,
+        nextDecisionAt: 0,
+      };
+    }
+  }
+
   // ─── Clock & weather ──────────────────────────────────────────────────────
 
   clockHour() {
@@ -243,7 +262,16 @@ class WaveRunnerGame {
     const p = this.players[id];
     if (!p || p.state === 'out' || p.state === 'washed' || p.state === 'resting') return;
     if (this.phase !== 'running') return;
-    if (type === 'stand') { p.action = null; return; }
+    if (type === 'stand') {
+      // Standing is a real recovery move, not just the idle default: bailing
+      // out of a jump/dive collapses most of the remaining cooldown so a
+      // misread can be corrected with a quick second action.
+      if (p.action) {
+        p.action = null;
+        p.cooldownUntil = Math.min(p.cooldownUntil, this.t + 0.25);
+      }
+      return;
+    }
     if (type !== 'jump' && type !== 'dive') return;
     if (this.t < p.cooldownUntil) return;
     const dur = type === 'jump' ? this.cfg.jumpDuration : this.cfg.diveDuration;
@@ -342,6 +370,7 @@ class WaveRunnerGame {
 
     this._spawnWaves();
     this._advanceWaves(dt);
+    this._npcTick();
     this._movePlayers(dt);
     this._lifeguard(dt);
     this._weatherHazards();
@@ -349,7 +378,12 @@ class WaveRunnerGame {
     this._wildlife(dt);
     this._expireBuffsAndPowerups();
 
+    const humans = Object.values(this.players).filter(p => !p.npc);
     if (this._allOut()) {
+      this._endGame('wiped-out');
+    } else if (humans.length > 0 && humans.every(h => h.state === 'out')) {
+      // NPCs still splashing around don't keep a day alive once every real
+      // beachgoer is out.
       this._endGame('wiped-out');
     } else if (this.multiplayer) {
       // A multiplayer day with one beachgoer left (others eliminated or
@@ -520,6 +554,85 @@ class WaveRunnerGame {
       // Walk-over pickup: intersecting an item grabs it, tapped or not.
       for (const pu of [...this.powerups]) {
         if (this._dist(p, pu) <= this.cfg.pickupRadius) this._collect(p, pu);
+      }
+    }
+  }
+
+  // ─── NPC beachgoers ───────────────────────────────────────────────────────
+
+  // Simple decision loop, run through the same input handlers as real
+  // players so every rule (cooldowns, dive cost, lunge, blankets) applies.
+  _npcTick() {
+    const waterline = this.waterline();
+    const speedFactor = 1 + this.cfg.tideSpeedGain * this.tide();
+
+    for (const p of Object.values(this.players)) {
+      if (!p.npc || p.state === 'out' || p.state === 'washed') continue;
+
+      // Wave reading runs every tick — the reaction window is sub-second.
+      if (p.state === 'idle' && p.y < waterline && !p.action) {
+        let threat = null;
+        let soonest = Infinity;
+        for (const w of this.waves) {
+          if (w.resolved.has(p.id) || w.size === 1) continue;
+          const gap = (p.y - this.cfg.hitRange) - this._waveFrontY(w, p.x);
+          if (gap <= 0) continue;
+          const eta = gap / (WAVE_TYPES[w.size].speed * speedFactor);
+          if (eta < soonest) { soonest = eta; threat = w; }
+        }
+        if (threat && soonest <= 0.45) {
+          if (this.rng() < p.npc.skill) {
+            this.handleAction(p.id, threat.size === 3 || this.rng() < 0.5 ? 'dive' : 'jump');
+          } else if (this.rng() < 0.4) {
+            this.handleAction(p.id, 'jump');   // panic jump — fatal vs thumpers
+          }
+        }
+      }
+
+      // Everything else on a coarser cadence.
+      if (this.t < p.npc.nextDecisionAt) continue;
+      p.npc.nextDecisionAt = this.t + 0.3;
+
+      if (p.state === 'resting') {
+        if (p.hp > 65) this.handleRest(p.id);   // rested enough — back at it
+        continue;
+      }
+
+      // Self-preservation: lick wounds under the umbrella, flee storms
+      // (the meaner they are, the longer they tempt the lightning).
+      if (p.hp < 25 && !p.pendingRest) { this.handleRest(p.id); continue; }
+      if (this.weatherNow() === 'storm' && p.y < waterline && !p.pendingRest
+          && this.rng() < 0.3 * (1 - p.npc.aggression * 0.6)) {
+        this.handleRest(p.id);
+        continue;
+      }
+
+      // Aggression: shove anyone within lunge range.
+      if (this.t >= p.shoveReadyAt && this.rng() < p.npc.aggression * 0.35) {
+        const near = this._alivePlayers().some(q =>
+          q.id !== p.id && q.state !== 'washed' && q.y < waterline &&
+          this._dist(p, q) <= this.cfg.shoveRadius);
+        if (near) { this.handleShove(p.id); continue; }
+      }
+
+      if (!p.target && !p.steer) {
+        // Loot interest.
+        if (this.powerups.length && this.rng() < 0.3) {
+          const pu = this.powerups[Math.floor(this.rng() * this.powerups.length)];
+          this.handleTapPowerup(p.id, pu.id);
+          continue;
+        }
+        // Bullies stalk the nearest swimmer; everyone else just plays the surf.
+        const prey = this._alivePlayers()
+          .filter(q => q.id !== p.id && !q.npc && q.y < waterline)
+          .sort((a, b) => this._dist(p, a) - this._dist(p, b))[0];
+        if (prey && this.rng() < p.npc.aggression * 0.5) {
+          this.handleMove(p.id, prey.x, prey.y);
+        } else if (this.rng() < 0.5) {
+          this.handleMove(p.id,
+            this._rand(this.cfg.flagMinX + 5, this.cfg.flagMaxX - 5),
+            this._rand(this.cfg.deepY + 8, waterline - 6));
+        }
       }
     }
   }
@@ -753,6 +866,7 @@ class WaveRunnerGame {
     const rows = Object.values(this.players).map(p => ({
       id: p.id,
       name: p.name,
+      npc: !!p.npc,
       avatar: p.avatar,
       score: Math.round(p.score),
       wavesRidden: p.wavesRidden,
@@ -794,6 +908,7 @@ class WaveRunnerGame {
       players: Object.values(this.players).map(p => ({
         id: p.id,
         name: p.name,
+        npc: !!p.npc,
         avatar: p.avatar,
         x: Math.round(p.x * 10) / 10,
         y: Math.round(p.y * 10) / 10,
@@ -826,4 +941,4 @@ class WaveRunnerGame {
   }
 }
 
-module.exports = { WaveRunnerGame, DEFAULTS, WAVE_TYPES, DAY_START_HOUR, DAY_END_HOUR, WEATHER };
+module.exports = { WaveRunnerGame, DEFAULTS, WAVE_TYPES, DAY_START_HOUR, DAY_END_HOUR, WEATHER, NPC_ROSTER };

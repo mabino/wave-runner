@@ -128,6 +128,19 @@ describe('wave resolution', () => {
     expect(p.score).toBe(25 + 5 + game.cfg.diveRideBonus);
   });
 
+  test('standing bails out of an action into a short recovery', () => {
+    const game = makeGame();
+    const p = addSwimmer(game);
+    game.handleAction('p1', 'jump');       // cooldown would run to ~1.4s
+    run(game, 0.2);
+    game.handleAction('p1', 'stand');
+    expect(p.action).toBeNull();
+    run(game, 0.3);                        // past the shortened recovery
+    game.handleAction('p1', 'dive');
+    expect(p.action?.type).toBe('dive');   // correction allowed well before 1.4s
+    expect(game.t).toBeLessThan(1.0);
+  });
+
   test('diving costs a little HP; jumping is free', () => {
     const game = makeGame();
     const p = addSwimmer(game);
@@ -757,6 +770,77 @@ describe('angled waves', () => {
     expect(game.waveSlope).toBeGreaterThan(0.02);
     expect(Math.abs(game.waveSlope)).toBeLessThanOrEqual(0.03 + game.cfg.waveSlopeCap + 1e-9);
     expect(game.waves.every(w => typeof w.slope === 'number')).toBe(true);
+  });
+});
+
+describe('NPC beachgoers', () => {
+  test('addNpcs seeds roster players flagged as NPCs with rising aggression', () => {
+    const game = makeGame();
+    game.addNpcs(3);
+    const npcs = Object.values(game.players).filter(p => p.npc);
+    expect(npcs).toHaveLength(3);
+    expect(npcs.map(p => p.npc.aggression)).toEqual([0.25, 0.55, 0.9]);
+    expect(game.snapshot().players.every(p => p.npc === true)).toBe(true);
+  });
+
+  test('a skilled NPC reads and dives a thumper', () => {
+    const game = makeGame();
+    game.addNpcs(1);
+    const npc = game.players['npc-mel'];
+    npc.x = 50; npc.y = 40;
+    npc.npc.skill = 1;
+    sendWave(game, 3, npc.y - 8);
+    const events = run(game, 1);
+    const result = events.find(e => e.type === 'wave-result' && e.playerId === 'npc-mel');
+    expect(result.outcome).toBe('ride');
+  });
+
+  test('the most aggressive NPC shoves a nearby swimmer', () => {
+    const game = makeGame({}, () => 0.2);
+    game.hours = Array(game.hours.length).fill('sunny');
+    game.addNpcs(3);
+    game.players['npc-mel'].x = 5;  game.players['npc-mel'].y = 90;
+    game.players['npc-pete'].x = 95; game.players['npc-pete'].y = 90;
+    const bruiser = game.players['npc-bruiser'];
+    bruiser.x = 50; bruiser.y = 40;
+    addSwimmer(game, 'victim', 40, 55);
+    const events = run(game, 3);
+    const shove = events.find(e => e.type === 'shove' && e.shoverId === 'npc-bruiser');
+    expect(shove).toBeDefined();
+    expect(shove.playerId).toBe('victim');
+  });
+
+  test('a battered NPC retreats under the umbrella', () => {
+    const game = makeGame();
+    game.addNpcs(1);
+    const npc = game.players['npc-mel'];
+    npc.x = 50; npc.y = 40; npc.hp = 20;
+    run(game, 8);
+    expect(npc.state).toBe('resting');
+    expect(npc.hp).toBeGreaterThan(20);
+  });
+
+  test('the day ends when every human is out, even with NPCs still up', () => {
+    const game = makeGame();
+    addSwimmer(game, 'human', 80);
+    game.addNpcs(2);
+    run(game, 0.2);
+    game._applyDamage(game.players.human, 1000, 'wave');
+    const events = run(game, 0.2);
+    expect(events.find(e => e.type === 'game-over').reason).toBe('wiped-out');
+  });
+
+  test('outlasting the bullies crowns the human last-one-standing', () => {
+    const game = makeGame();
+    addSwimmer(game, 'human', 80);
+    game.addNpcs(2);
+    run(game, 0.2);
+    game._applyDamage(game.players['npc-mel'], 1000, 'wave');
+    game._applyDamage(game.players['npc-pete'], 1000, 'wave');
+    const events = run(game, 0.2);
+    const over = events.find(e => e.type === 'game-over');
+    expect(over.reason).toBe('last-one-standing');
+    expect(over.tally.best.id).toBe('human');
   });
 });
 

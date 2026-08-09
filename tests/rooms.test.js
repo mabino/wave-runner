@@ -70,6 +70,20 @@ describe('RoomManager', () => {
     expect(room.config.dayLength).toBe('marathon');
   });
 
+  test('the NPC option is clamped and staffs the game', () => {
+    const room = manager.createRoom('host1', 'Alice');
+    room.setConfig({ npcs: 2 });
+    expect(room.config.npcs).toBe(2);
+    room.setConfig({ npcs: 9 });
+    expect(room.config.npcs).toBe(2);
+    room.setConfig({ npcs: -1 });
+    expect(room.config.npcs).toBe(2);
+    const game = room.startGame(WaveRunnerGame);
+    const npcs = Object.values(game.players).filter(p => p.npc);
+    expect(npcs.map(p => p.name)).toEqual(['Mellow Mel', 'Pushy Pete']);
+    expect(Object.keys(game.players)).toHaveLength(3);   // host + 2 bullies
+  });
+
   test('starting a game seeds it with every lobby player', () => {
     const room = manager.createRoom('host1', 'Alice');
     manager.joinRoom(room.code, 'p2', 'Bob');
