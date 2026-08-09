@@ -15,7 +15,8 @@ Playable on iPhone/iPad Safari in portrait or landscape. Served at
 - **Waves** roll in from the top with subtle visual tells (foam height, face
   shadow): ripples are safe standing, rollers need a timed **jump** or
   **dive**, thumpers demand a **dive**. Mistime it and you're washed up on
-  the sand with less HP.
+  the sand with less HP. Diving costs a sliver of HP (never lethal) but
+  pays a scoring premium when it lands.
 - **Status bar** shows the time of day plus the next two hours of weather.
   When a **thunderstorm** hour arrives, being in the water risks a lightning
   strike — wait it out on the sand, or wear the body suit.

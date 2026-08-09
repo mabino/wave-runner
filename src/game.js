@@ -29,6 +29,8 @@ const DEFAULTS = {
   jumpDuration: 0.9,        // airtime seconds
   diveDuration: 1.4,        // underwater seconds
   actionCooldown: 0.5,
+  diveHpCost: 2,            // diving is tiring...
+  diveRideBonus: 5,         // ...but pays better when it lands
 
   walkSpeed: 16,            // units/sec on sand
   swimSpeed: 10,            // units/sec in water
@@ -196,6 +198,8 @@ class WaveRunnerGame {
     if (type !== 'jump' && type !== 'dive') return;
     if (this.t < p.cooldownUntil) return;
     const dur = type === 'jump' ? this.cfg.jumpDuration : this.cfg.diveDuration;
+    // Exertion: each dive costs a little HP, but never knocks a player out.
+    if (type === 'dive') p.hp = Math.max(1, p.hp - this.cfg.diveHpCost);
     p.action = { type, startedAt: this.t, until: this.t + dur };
     p.cooldownUntil = p.action.until + this.cfg.actionCooldown;
   }
@@ -384,10 +388,12 @@ class WaveRunnerGame {
       // Timing quality: acting in the first 60% of the window is a clean read
       // of the wave and pays a small bonus.
       const perfect = !!act && (this.t - act.startedAt) <= (act.until - act.startedAt) * 0.6;
+      // Riding under a dive pays a premium — the flip side of its HP cost.
+      const diveBonus = act && act.type === 'dive' ? this.cfg.diveRideBonus : 0;
       p.streak += 1;
       p.bestStreak = Math.max(p.bestStreak, p.streak);
       p.wavesRidden += 1;
-      p.score += spec.points + 2 * (p.streak - 1) + (perfect ? 5 : 0);
+      p.score += spec.points + 2 * (p.streak - 1) + (perfect ? 5 : 0) + diveBonus;
       this._emit({ type: 'wave-result', playerId: p.id, outcome: 'ride', size: w.size, perfect, streak: p.streak });
     } else {
       p.streak = 0;

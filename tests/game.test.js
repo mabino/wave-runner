@@ -124,7 +124,39 @@ describe('wave resolution', () => {
     const events = run(game, 0.3);
     const result = events.find(e => e.type === 'wave-result');
     expect(result.perfect).toBe(true);
-    expect(p.score).toBe(25 + 5);        // base + perfect, no streak bonus yet
+    // base + perfect + dive premium, no streak bonus yet
+    expect(p.score).toBe(25 + 5 + game.cfg.diveRideBonus);
+  });
+
+  test('diving costs a little HP; jumping is free', () => {
+    const game = makeGame();
+    const p = addSwimmer(game);
+    game.handleAction('p1', 'dive');
+    expect(p.hp).toBe(100 - game.cfg.diveHpCost);
+    run(game, game.cfg.diveDuration + game.cfg.actionCooldown + 0.2);
+    game.handleAction('p1', 'jump');
+    expect(p.hp).toBe(100 - game.cfg.diveHpCost);   // unchanged by the jump
+  });
+
+  test('dive exertion never knocks a player out', () => {
+    const game = makeGame();
+    const p = addSwimmer(game);
+    p.hp = 1;
+    game.handleAction('p1', 'dive');
+    expect(p.hp).toBe(1);
+    expect(p.state).toBe('idle');
+  });
+
+  test('a dive-ride outscores a jump-ride on the same wave', () => {
+    const scoreWith = (action) => {
+      const game = makeGame();
+      const p = addSwimmer(game);
+      sendWave(game, 2, p.y - 4.5);
+      game.handleAction('p1', action);
+      run(game, 0.3);
+      return p.score;
+    };
+    expect(scoreWith('dive')).toBe(scoreWith('jump') + 5);
   });
 
   test('streak grows scoring and resets on a wipe', () => {
