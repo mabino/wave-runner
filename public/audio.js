@@ -174,6 +174,16 @@
     dive()  { blip('sine', 500, 0.3, 0.12, 0, 160); noiseBurst(0.2, 0.12, 1800, 0.08, 'highpass'); },
     pickup(){ blip('square', 880, 0.08, 0.12); blip('square', 1320, 0.14, 0.12, 0.08); },
     zap()   { noiseBurst(0.15, 0.35, 5000, 0, 'highpass'); blip('sawtooth', 1600, 0.3, 0.2, 0.02, 90); },
+    sharkAlert() {
+      blip('sawtooth', 98, 0.35, 0.16);
+      blip('sawtooth', 92, 0.5, 0.18, 0.4);
+    },
+    squawk() {
+      blip('triangle', 1350, 0.22, 0.09, 0, 760);
+      blip('triangle', 1450, 0.18, 0.08, 0.2, 820);
+    },
+    sting() { blip('square', 1200, 0.12, 0.12, 0, 500); },
+    pinch() { blip('square', 240, 0.05, 0.14); blip('square', 210, 0.05, 0.14, 0.07); },
     eliminated() {
       blip('triangle', 392, 0.25, 0.14);
       blip('triangle', 330, 0.25, 0.14, 0.25);

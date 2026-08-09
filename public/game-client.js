@@ -259,6 +259,78 @@
     ctx.fillRect(x - 4, y - 41, 9, 6);
   }
 
+  function lerpedHazards() {
+    const f = lerpFactor();
+    if (!prevSnap || !prevSnap.hazards) return snap.hazards || [];
+    const prev = new Map(prevSnap.hazards.map(h => [h.id, h]));
+    return (snap.hazards || []).map(h => {
+      const q = prev.get(h.id);
+      return q ? { ...h, x: lerp(q.x, h.x, f), y: lerp(q.y, h.y, f) } : h;
+    });
+  }
+
+  function drawHazard(h) {
+    const x = sx(h.x), y = sy(h.y);
+    const t = performance.now() / 1000;
+    if (h.kind === 'shark') {
+      // Wake trail behind the fin.
+      ctx.strokeStyle = 'rgba(255,255,255,.5)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      const dir = h.vx >= 0 ? -1 : 1;
+      ctx.moveTo(x + dir * 12, y + 2);
+      ctx.lineTo(x + dir * 34, y + 2 + Math.sin(t * 6) * 2);
+      ctx.stroke();
+      ctx.save();
+      ctx.translate(x, y);
+      if (h.vx < 0) ctx.scale(-1, 1);
+      ctx.font = '22px system-ui';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🦈', 0, 0);
+      ctx.restore();
+    } else if (h.kind === 'jelly') {
+      // Hand-drawn so older devices don't render a tofu box.
+      const bob = Math.sin(t * 2.2 + h.x) * 2.5;
+      ctx.fillStyle = 'rgba(255, 150, 190, .75)';
+      ctx.beginPath();
+      ctx.arc(x, y + bob, 8, Math.PI, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 150, 190, .65)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = -1; i <= 1; i++) {
+        ctx.moveTo(x + i * 4, y + bob + 1);
+        ctx.quadraticCurveTo(x + i * 4 + Math.sin(t * 3 + i) * 3, y + bob + 7, x + i * 4, y + bob + 12);
+      }
+      ctx.stroke();
+    } else if (h.kind === 'crab') {
+      const scuttle = Math.sin(t * 9) * 2;
+      ctx.font = '20px system-ui';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🦀', x, y + scuttle * 0.4);
+    }
+  }
+
+  function drawGull(g) {
+    // Swoop from the top of the screen down to the marked item.
+    const gx = sx(g.x);
+    const gy = -20 + (sy(g.y) + 20) * g.progress;
+    const flap = Math.sin(performance.now() / 90) * 4;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(gx - 10, gy - flap);
+    ctx.quadraticCurveTo(gx - 4, gy + 3, gx, gy);
+    ctx.quadraticCurveTo(gx + 4, gy + 3, gx + 10, gy - flap);
+    ctx.stroke();
+    ctx.fillStyle = '#f2a33c';
+    ctx.fillRect(gx - 1, gy + 1, 3, 2);   // beak
+  }
+
   function drawPowerup(u) {
     const x = sx(u.x), y = sy(u.y);
     const bob = Math.sin(performance.now() / 260 + u.x) * 2.5;
@@ -423,6 +495,8 @@
     drawLifeguardTower(beachTop);
 
     for (const u of snap.powerups) drawPowerup(u);
+    for (const h of lerpedHazards()) drawHazard(h);
+    if (snap.gull) drawGull(snap.gull);
 
     const players = lerpedPlayers().slice().sort((a, b) => a.y - b.y);
     for (const p of players) drawPlayer(p, beachTop);

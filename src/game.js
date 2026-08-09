@@ -51,12 +51,19 @@ const DEFAULTS = {
   sunscreenHeal: 35,
   buffDurations: { bodysuit: 45, bodyboard: 20, blanket: 30 },
 
-  // Shove reach in world units. World x spans the full screen width, so a
-  // small value is only a few finger-widths on a phone — 15 units ≈ one
-  // sprite-and-a-half, i.e. "visibly next to each other".
-  shoveRadius: 15,
+  // Shove acquisition range in world units. Precise touch positioning is
+  // hard, so the shover LUNGES to the nearest swimmer in this range and
+  // connects on contact — the range is what you'd read as "near me".
+  shoveRadius: 25,
   shoveCooldown: 3,
   shoveDamage: 5,
+
+  // Wildlife hazards.
+  hazardRadius: 5,
+  sharkMinGap: 45,  sharkMaxGap: 80,  sharkSpeed: 22, sharkDamage: 30,
+  jellyMinGap: 25,  jellyMaxGap: 45,  jellyTtl: 20,   jellyDamage: 12,
+  crabMinGap: 30,   crabMaxGap: 60,   crabSpeed: 7,   crabDamage: 6,
+  gullMinGap: 18,   gullMaxGap: 32,   gullSnatchDelay: 1.5,
 };
 
 // Per-size wave characteristics. Bigger waves run faster, hit harder and pay
@@ -78,14 +85,21 @@ class WaveRunnerGame {
     this.players = {};
     this.waves = [];
     this.powerups = [];
+    this.hazards = [];                // sharks, jellyfish, crabs
+    this.gullRaid = null;             // a seagull eyeing a power-up
     this.events = [];
     this.seq = 0;
+    this.multiplayer = null;          // decided on the first tick
 
     this.hours = this._generateWeather();
     this.nextWaveAt = this._rand(this.cfg.waveIntervalMin, this.cfg.waveIntervalMax);
     this.nextPlaneAt = this._rand(this.cfg.planeMinGap, this.cfg.planeMaxGap);
     this.pendingDropAt = null;
     this.nextLightningAt = null;
+    this.nextSharkAt = this._rand(this.cfg.sharkMinGap, this.cfg.sharkMaxGap);
+    this.nextJellyAt = this._rand(this.cfg.jellyMinGap, this.cfg.jellyMaxGap);
+    this.nextCrabAt = this._rand(this.cfg.crabMinGap, this.cfg.crabMaxGap);
+    this.nextGullAt = this._rand(this.cfg.gullMinGap, this.cfg.gullMaxGap);
   }
 
   // ─── Setup ────────────────────────────────────────────────────────────────
@@ -240,6 +254,14 @@ class WaveRunnerGame {
 
     p.shoveReadyAt = this.t + this.cfg.shoveCooldown;
 
+    // Lunge to contact: close the gap for the shover so touch positioning
+    // doesn't have to be pixel-perfect.
+    p.x = Math.max(2, Math.min(98, target.x + (p.x <= target.x ? -3 : 3)));
+    p.y = Math.max(8, Math.min(92, target.y));
+    p.target = null;
+    p.pendingRest = false;
+    p.pendingPickup = null;
+
     if (this.t < target.buffs.blanket) {
       this._emit({ type: 'shove', shoverId: id, playerId: target.id, blocked: true });
       return;
@@ -255,6 +277,7 @@ class WaveRunnerGame {
 
   tick(dt) {
     if (this.phase !== 'running') return [];
+    if (this.multiplayer === null) this.multiplayer = Object.keys(this.players).length >= 2;
     this.t += dt;
 
     if (this.clockHour() >= DAY_END_HOUR) {
@@ -268,9 +291,17 @@ class WaveRunnerGame {
     this._lifeguard(dt);
     this._weatherHazards();
     this._planeAndPowerups();
+    this._wildlife(dt);
     this._expireBuffsAndPowerups();
 
-    if (this._allOut()) this._endGame('wiped-out');
+    if (this._allOut()) {
+      this._endGame('wiped-out');
+    } else if (this.multiplayer) {
+      // A multiplayer day with one beachgoer left (others eliminated or
+      // gone) ends immediately — last one standing wins by default.
+      const active = Object.values(this.players).filter(p => p.state !== 'out');
+      if (active.length === 1) this._endGame('last-one-standing');
+    }
     return this._drainEvents();
   }
 
@@ -495,6 +526,105 @@ class WaveRunnerGame {
     }
   }
 
+  // ─── Wildlife: sharks, jellyfish, crabs, thieving gulls ──────────────────
+
+  _wildlife(dt) {
+    const cfg = this.cfg;
+
+    if (this.t >= this.nextSharkAt) {
+      this.nextSharkAt = this.t + this._rand(cfg.sharkMinGap, cfg.sharkMaxGap);
+      const fromLeft = this.rng() < 0.5;
+      this.hazards.push({
+        id: `h${this.seq++}`, kind: 'shark',
+        x: fromLeft ? -4 : 104,
+        y: this._rand(cfg.deepY + 4, cfg.beachY - 8),
+        vx: (fromLeft ? 1 : -1) * cfg.sharkSpeed, vy: 0,
+        hit: new Set(), expiresAt: Infinity,
+      });
+      this._emit({ type: 'shark' });
+    }
+
+    if (this.t >= this.nextJellyAt) {
+      this.nextJellyAt = this.t + this._rand(cfg.jellyMinGap, cfg.jellyMaxGap);
+      this.hazards.push({
+        id: `h${this.seq++}`, kind: 'jelly',
+        x: this._rand(12, 88),
+        y: this._rand(cfg.deepY + 2, cfg.beachY - 8),
+        vx: this._rand(-1.5, 1.5), vy: this._rand(0.2, 0.8),
+        hit: new Set(), expiresAt: this.t + cfg.jellyTtl,
+      });
+      this._emit({ type: 'jelly' });
+    }
+
+    if (this.t >= this.nextCrabAt) {
+      this.nextCrabAt = this.t + this._rand(cfg.crabMinGap, cfg.crabMaxGap);
+      const fromLeft = this.rng() < 0.5;
+      this.hazards.push({
+        id: `h${this.seq++}`, kind: 'crab',
+        x: fromLeft ? -4 : 104,
+        y: this._rand(cfg.beachY + 6, 88),
+        vx: (fromLeft ? 1 : -1) * cfg.crabSpeed, vy: 0,
+        hit: new Set(), expiresAt: Infinity,
+      });
+      this._emit({ type: 'crab' });
+    }
+
+    // A gull picks a mark among the dropped items; grab it first or lose it.
+    if (this.t >= this.nextGullAt) {
+      this.nextGullAt = this.t + this._rand(cfg.gullMinGap, cfg.gullMaxGap);
+      if (!this.gullRaid && this.powerups.length) {
+        const pu = this.powerups[Math.floor(this.rng() * this.powerups.length)];
+        this.gullRaid = { powerupId: pu.id, x: pu.x, y: pu.y, start: this.t, at: this.t + cfg.gullSnatchDelay };
+        this._emit({ type: 'gull-swoop', powerupId: pu.id, x: pu.x, y: pu.y });
+      }
+    }
+    if (this.gullRaid) {
+      const pu = this.powerups.find(u => u.id === this.gullRaid.powerupId);
+      if (!pu) {
+        this.gullRaid = null;   // someone beat the bird to it
+      } else if (this.t >= this.gullRaid.at) {
+        this.powerups = this.powerups.filter(u => u.id !== pu.id);
+        this._emit({ type: 'gull-steal', powerupId: pu.id, powerupType: pu.type, x: pu.x, y: pu.y });
+        this.gullRaid = null;
+      }
+    }
+
+    for (const h of this.hazards) {
+      h.x += h.vx * dt;
+      h.y += h.vy * dt;
+      if (h.kind === 'jelly') {
+        if (h.x < 6 || h.x > 94) h.vx = -h.vx;
+        h.y = Math.min(h.y, cfg.beachY - 4);   // jellyfish stay in the water
+      }
+
+      for (const p of this._alivePlayers()) {
+        if (p.state === 'washed') continue;
+        const inWater = p.y < cfg.beachY;
+        const d = this._dist(p, h);
+
+        if (h.kind === 'shark' && inWater && d <= cfg.hazardRadius + 1 && !h.hit.has(p.id)) {
+          h.hit.add(p.id);
+          p.streak = 0;
+          this._washAshore(p);
+          this._emit({ type: 'shark-attack', playerId: p.id });
+          this._applyDamage(p, cfg.sharkDamage, 'shark');
+        } else if (h.kind === 'jelly' && inWater && d <= cfg.hazardRadius - 1) {
+          h.expiresAt = 0;                     // spent on the sting
+          this._emit({ type: 'jelly-sting', playerId: p.id });
+          this._applyDamage(p, cfg.jellyDamage, 'jelly');
+          break;
+        } else if (h.kind === 'crab' && !inWater && d <= cfg.hazardRadius - 1 && !h.hit.has(p.id)) {
+          h.hit.add(p.id);
+          if (p.state === 'resting') p.state = 'idle';   // pinched awake
+          this._emit({ type: 'crab-pinch', playerId: p.id });
+          this._applyDamage(p, cfg.crabDamage, 'crab');
+        }
+      }
+    }
+
+    this.hazards = this.hazards.filter(h => this.t < h.expiresAt && h.x > -8 && h.x < 108);
+  }
+
   _collect(p, pu) {
     this.powerups = this.powerups.filter(u => u.id !== pu.id);
     if (pu.type === 'sunscreen') {
@@ -586,6 +716,17 @@ class WaveRunnerGame {
       })),
       waves: this.waves.map(w => ({ id: w.id, size: w.size, y: Math.round(w.y * 10) / 10, wobble: w.wobble })),
       powerups: this.powerups.map(u => ({ id: u.id, type: u.type, x: u.x, y: u.y, ttl: Math.round((u.expiresAt - this.t) * 10) / 10 })),
+      hazards: this.hazards.map(h => ({
+        id: h.id, kind: h.kind,
+        x: Math.round(h.x * 10) / 10,
+        y: Math.round(h.y * 10) / 10,
+        vx: h.vx,
+      })),
+      gull: this.gullRaid ? {
+        x: this.gullRaid.x,
+        y: this.gullRaid.y,
+        progress: Math.min(1, (this.t - this.gullRaid.start) / (this.gullRaid.at - this.gullRaid.start)),
+      } : null,
     };
   }
 }

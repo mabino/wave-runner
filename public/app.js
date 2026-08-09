@@ -301,9 +301,11 @@
     showScreen('over');
     Beach.sfx.fanfare();
 
-    $('over-title').textContent = reason === 'end-of-day'
-      ? '🌅 End of the Day'
-      : '🌊 The Ocean Wins';
+    $('over-title').textContent = {
+      'end-of-day': '🌅 End of the Day',
+      'wiped-out': '🌊 The Ocean Wins',
+      'last-one-standing': '🏆 Last One Standing',
+    }[reason] || '🌅 End of the Day';
 
     const best = tally.best;
     $('over-best').innerHTML = best
@@ -446,7 +448,29 @@
         break;
       }
       case 'shove-miss':
-        if (mine) toast('🫸 Nobody within reach — get closer to a swimmer');
+        if (mine) toast('🫸 No swimmer near you — wade closer first');
+        break;
+      case 'shark':
+        Beach.sfx.sharkAlert();
+        toast('🦈 Fin spotted — clear the water!', 'warn');
+        break;
+      case 'shark-attack':
+        Beach.sfx.bigSplash();
+        toast(mine ? '🦈 Shark attack! Washed ashore!' : `🦈 ${snapName(ev.playerId)} got bitten!`, 'danger');
+        break;
+      case 'jelly-sting':
+        if (mine) { Beach.sfx.sting(); toast('🪼 Jellyfish sting!', 'danger'); }
+        break;
+      case 'crab-pinch':
+        if (mine) { Beach.sfx.pinch(); toast('🦀 Crab pinch! Ow!', 'danger'); }
+        break;
+      case 'gull-swoop':
+        Beach.sfx.squawk();
+        toast('🐦 A gull dives for a prize — grab it first!', 'warn');
+        break;
+      case 'gull-steal':
+        Beach.sfx.squawk();
+        toast('🐦 The seagull made off with it!');
         break;
       case 'eliminated':
         Beach.sfx.eliminated();

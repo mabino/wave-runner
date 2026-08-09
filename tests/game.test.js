@@ -7,7 +7,17 @@ function makeGame(config = {}, rng = () => 0.5) {
   // scenario it cares about.
   game.nextWaveAt = Infinity;
   game.nextPlaneAt = Infinity;
+  game.nextSharkAt = Infinity;
+  game.nextJellyAt = Infinity;
+  game.nextCrabAt = Infinity;
+  game.nextGullAt = Infinity;
   return game;
+}
+
+function addHazard(game, kind, x, y, vx = 0) {
+  const h = { id: `test-${kind}-${x}`, kind, x, y, vx, vy: 0, hit: new Set(), expiresAt: Infinity };
+  game.hazards.push(h);
+  return h;
 }
 
 function addSwimmer(game, id = 'p1', y = 40, x = 50) {
@@ -465,6 +475,16 @@ describe('shoving', () => {
     expect(run(game, 0.2).find(e => e.type === 'shove')).toBeDefined();
   });
 
+  test('the shover lunges to contact from across the acquisition range', () => {
+    const game = makeGame();
+    const [a, b] = pair(game, game.cfg.shoveRadius - 2);   // near the edge of range
+    const targetX = b.x;
+    game.handleShove('attacker');
+    const events = run(game, 0.2);
+    expect(events.find(e => e.type === 'shove')).toMatchObject({ blocked: false });
+    expect(Math.abs(a.x - targetX)).toBeLessThanOrEqual(3.5);   // closed the gap
+  });
+
   test('a shove can eliminate a swimmer on their last legs', () => {
     const game = makeGame();
     const [, b] = pair(game);
@@ -473,6 +493,132 @@ describe('shoving', () => {
     const events = run(game, 0.2);
     expect(events.find(e => e.type === 'eliminated')).toMatchObject({ playerId: 'victim', cause: 'shove' });
     expect(b.state).toBe('out');
+  });
+});
+
+describe('last one standing', () => {
+  test('a multiplayer day ends when only one beachgoer remains active', () => {
+    const game = makeGame();
+    addSwimmer(game, 'alice', 80);
+    addSwimmer(game, 'bob', 80);
+    addSwimmer(game, 'carol', 80);
+    run(game, 0.2);   // first tick locks in multiplayer mode
+    game._applyDamage(game.players.bob, 1000, 'wave');
+    game._applyDamage(game.players.carol, 1000, 'wave');
+    const events = run(game, 0.2);
+    const over = events.find(e => e.type === 'game-over');
+    expect(over.reason).toBe('last-one-standing');
+    expect(over.tally.best.id).toBe('alice');
+    expect(over.tally.best.survived).toBe(true);
+  });
+
+  test('players leaving a multiplayer game also crowns the last one left', () => {
+    const game = makeGame();
+    addSwimmer(game, 'alice', 80);
+    addSwimmer(game, 'bob', 80);
+    run(game, 0.2);
+    game.removePlayer('bob');
+    const events = run(game, 0.2);
+    expect(events.find(e => e.type === 'game-over').reason).toBe('last-one-standing');
+  });
+
+  test('a solo game keeps running for its lone player', () => {
+    const game = makeGame();
+    addSwimmer(game, 'solo', 80);
+    run(game, 2);
+    expect(game.phase).toBe('running');
+  });
+
+  test('a simultaneous full wipeout still reads as the ocean winning', () => {
+    const game = makeGame();
+    addSwimmer(game, 'alice', 80);
+    addSwimmer(game, 'bob', 80);
+    run(game, 0.2);
+    game._applyDamage(game.players.alice, 1000, 'wave');
+    game._applyDamage(game.players.bob, 1000, 'wave');
+    const events = run(game, 0.2);
+    expect(events.find(e => e.type === 'game-over').reason).toBe('wiped-out');
+  });
+});
+
+describe('wildlife hazards', () => {
+  test('a shark bite mauls a swimmer and washes them ashore', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 40, 50);
+    p.streak = 3;
+    addHazard(game, 'shark', 44, 40, 22);   // closing fast from the left
+    const events = run(game, 0.5);
+    expect(events.find(e => e.type === 'shark-attack')).toMatchObject({ playerId: 'p1' });
+    expect(p.hp).toBe(100 - game.cfg.sharkDamage);
+    expect(p.state).toBe('washed');
+    expect(p.y).toBeGreaterThanOrEqual(game.cfg.beachY);
+    expect(p.streak).toBe(0);
+  });
+
+  test('sharks cannot reach players on the sand', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 75, 50);   // on the beach
+    addHazard(game, 'shark', 44, 60, 22);
+    const events = run(game, 2);
+    expect(events.find(e => e.type === 'shark-attack')).toBeUndefined();
+    expect(p.hp).toBe(100);
+  });
+
+  test('a jellyfish stings once and is spent', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 40, 50);
+    addHazard(game, 'jelly', 50, 40);
+    const events = run(game, 0.3);
+    expect(events.filter(e => e.type === 'jelly-sting')).toHaveLength(1);
+    expect(p.hp).toBe(100 - game.cfg.jellyDamage);
+    expect(game.hazards.find(h => h.kind === 'jelly')).toBeUndefined();
+  });
+
+  test('a crab pinches a resting player awake', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 80, 50);
+    game.handleRest('p1');
+    expect(p.state).toBe('resting');
+    addHazard(game, 'crab', 44, 80, 7);
+    const events = run(game, 1.5);
+    expect(events.filter(e => e.type === 'crab-pinch')).toHaveLength(1);   // once per crab
+    expect(p.hp).toBe(100 - game.cfg.crabDamage);
+    expect(p.state).toBe('idle');
+  });
+
+  test('crabs stay out of the water', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 40, 50);   // swimming
+    addHazard(game, 'crab', 48, 40, 7);         // hypothetically adjacent
+    const events = run(game, 1);
+    expect(events.find(e => e.type === 'crab-pinch')).toBeUndefined();
+    expect(p.hp).toBe(100);
+  });
+
+  test('a gull swoops in and steals an unclaimed item', () => {
+    const game = makeGame();
+    addSwimmer(game, 'p1', 80, 20);
+    game.powerups.push({ id: 'pu1', type: 'sunscreen', x: 70, y: 50, expiresAt: 1000 });
+    game.nextGullAt = 0;
+    const early = run(game, 0.3);
+    expect(early.find(e => e.type === 'gull-swoop')).toMatchObject({ powerupId: 'pu1' });
+    expect(game.powerups).toHaveLength(1);      // telegraph window
+    const later = run(game, game.cfg.gullSnatchDelay + 0.3);
+    expect(later.find(e => e.type === 'gull-steal')).toMatchObject({ powerupId: 'pu1' });
+    expect(game.powerups).toHaveLength(0);
+  });
+
+  test('grabbing the item during the swoop foils the gull', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 50, 70);
+    game.powerups.push({ id: 'pu1', type: 'sunscreen', x: 70, y: 50, expiresAt: 1000 });
+    game.nextGullAt = 0;
+    run(game, 0.2);                             // swoop begins
+    game.handleTapPowerup('p1', 'pu1');         // player is intersecting
+    const events = run(game, game.cfg.gullSnatchDelay + 0.5);
+    expect(events.find(e => e.type === 'gull-steal')).toBeUndefined();
+    expect(p.powerupsCollected).toBe(1);
+    expect(game.gullRaid).toBeNull();
   });
 });
 

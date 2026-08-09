@@ -28,9 +28,17 @@ Playable on iPhone/iPad Safari in portrait or landscape. Served at
   🛹 body board (ride any wave for a while), 🧺 beach blanket (shove-proof).
   Tapping an item walks your beachgoer over — you must actually reach it
   to pick it up.
-- **Shove** (🫸 button): knock a nearby swimmer out of the water and back
-  onto the beach — breaking their streak and chipping their HP — unless
-  their beach blanket is spread out. Short cooldown between shoves.
+- **Shove** (🫸 button): lunge at the nearest swimmer near you and knock
+  them out of the water and back onto the beach — breaking their streak
+  and chipping their HP — unless their beach blanket is spread out. Short
+  cooldown between shoves; a whiff costs nothing.
+- **Wildlife**: 🦈 sharks sweep the water (heavy bite, washed ashore),
+  🪼 jellyfish drift and sting, 🦀 crabs scuttle the sand and pinch
+  resting campers awake, and 🐦 seagulls swoop to steal dropped power-ups
+  before you reach them.
+- In a **multiplayer** game, the last beachgoer still standing wins the
+  day by default; solo days run until the clock or the ocean says
+  otherwise.
 - A player is out when their HP hits zero. The game ends when everyone is
   out or the clock hits 7 PM; the tally crowns the **Best on the Beach**.
 
