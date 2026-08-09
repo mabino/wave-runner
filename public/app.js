@@ -272,12 +272,16 @@
   $('btn-shove').addEventListener('pointerdown', (e) => {
     e.preventDefault();
     socket.emit('game:shove');
-    // Mirror the server cooldown so the button telegraphs readiness.
+  });
+
+  // The cooldown only starts when a shove actually connects (or is
+  // blanket-blocked) — a whiff costs nothing, so the button stays live.
+  function shoveCooldownUi() {
     const btn = $('btn-shove');
     btn.disabled = true;
     btn.style.opacity = '.45';
     setTimeout(() => { btn.disabled = false; btn.style.opacity = ''; }, 3000);
-  });
+  }
   $('btn-rest').addEventListener('pointerdown', (e) => {
     e.preventDefault();
     socket.emit('game:rest');
@@ -430,6 +434,7 @@
         break;
       }
       case 'shove': {
+        if (ev.shoverId === state.myId) shoveCooldownUi();
         if (ev.blocked) {
           if (ev.shoverId === state.myId) toast('🧺 Their beach blanket held firm!', 'warn');
           if (mine) toast('🧺 Your blanket blocked a shove!', 'warn');
@@ -440,6 +445,9 @@
         }
         break;
       }
+      case 'shove-miss':
+        if (mine) toast('🫸 Nobody within reach — get closer to a swimmer');
+        break;
       case 'eliminated':
         Beach.sfx.eliminated();
         toast(mine ? '💀 Your beach day is over — spectating' : `💀 ${snapName(ev.playerId)} is out for the day`, 'danger');

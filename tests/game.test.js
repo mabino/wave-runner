@@ -446,11 +446,23 @@ describe('shoving', () => {
     expect(run(game, 0.2).find(e => e.type === 'shove')).toBeUndefined();
   });
 
-  test('a shove needs the target within reach', () => {
+  test('a shove needs the target within reach, and a whiff reports back', () => {
     const game = makeGame();
     pair(game, game.cfg.shoveRadius + 5);
     game.handleShove('attacker');
-    expect(run(game, 0.2).find(e => e.type === 'shove')).toBeUndefined();
+    const events = run(game, 0.2);
+    expect(events.find(e => e.type === 'shove')).toBeUndefined();
+    expect(events.find(e => e.type === 'shove-miss')).toMatchObject({ playerId: 'attacker' });
+  });
+
+  test('a whiffed shove does not start the cooldown', () => {
+    const game = makeGame();
+    const [, b] = pair(game, game.cfg.shoveRadius + 5);
+    game.handleShove('attacker');            // whiff
+    run(game, 0.2);
+    b.x = 52; b.y = 40;                      // now in reach
+    game.handleShove('attacker');            // should fire immediately
+    expect(run(game, 0.2).find(e => e.type === 'shove')).toBeDefined();
   });
 
   test('a shove can eliminate a swimmer on their last legs', () => {

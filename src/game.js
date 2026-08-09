@@ -51,7 +51,10 @@ const DEFAULTS = {
   sunscreenHeal: 35,
   buffDurations: { bodysuit: 45, bodyboard: 20, blanket: 30 },
 
-  shoveRadius: 8,           // arm's reach for shoving another beachgoer
+  // Shove reach in world units. World x spans the full screen width, so a
+  // small value is only a few finger-widths on a phone — 15 units ≈ one
+  // sprite-and-a-half, i.e. "visibly next to each other".
+  shoveRadius: 15,
   shoveCooldown: 3,
   shoveDamage: 5,
 };
@@ -229,7 +232,11 @@ class WaveRunnerGame {
       const d = this._dist(p, q);
       if (d <= best) { best = d; target = q; }
     }
-    if (!target) return;
+    if (!target) {
+      // A whiffed shove costs nothing but tells the player it registered.
+      this._emit({ type: 'shove-miss', playerId: id });
+      return;
+    }
 
     p.shoveReadyAt = this.t + this.cfg.shoveCooldown;
 
