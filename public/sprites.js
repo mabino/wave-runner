@@ -199,8 +199,13 @@
     },
   ];
 
-  const SPRITE_W = 12;
-  const SPRITE_H = 16;
+  // Base pixel maps are 12×16; rendered sprites gain a 1px dark outline on
+  // every side (14×18) so beachgoers stay readable against the sand, whose
+  // hue can sit close to the lighter skin tones.
+  const BASE_W = 12;
+  const BASE_H = 16;
+  const SPRITE_W = BASE_W + 2;
+  const SPRITE_H = BASE_H + 2;
 
   function paletteFor(archetype, skinIdx, outfitIdx) {
     const arch = ARCHETYPES[archetype] || ARCHETYPES[0];
@@ -223,18 +228,38 @@
 
     const arch = ARCHETYPES[archetype] || ARCHETYPES[0];
     const pal = paletteFor(archetype, skinIdx, outfitIdx);
+
+    const base = document.createElement('canvas');
+    base.width = BASE_W;
+    base.height = BASE_H;
+    const bctx = base.getContext('2d');
+    arch.rows.forEach((row, y) => {
+      for (let x = 0; x < BASE_W; x++) {
+        const c = pal[row[x]];
+        if (!c) continue;
+        bctx.fillStyle = c;
+        bctx.fillRect(x, y, 1, 1);
+      }
+    });
+
+    // Outline: stamp a dark silhouette in the 4 cardinal offsets, then draw
+    // the sprite on top.
+    const sil = document.createElement('canvas');
+    sil.width = BASE_W;
+    sil.height = BASE_H;
+    const sctx = sil.getContext('2d');
+    sctx.drawImage(base, 0, 0);
+    sctx.globalCompositeOperation = 'source-in';
+    sctx.fillStyle = '#20242c';
+    sctx.fillRect(0, 0, BASE_W, BASE_H);
+
     const canvas = document.createElement('canvas');
     canvas.width = SPRITE_W;
     canvas.height = SPRITE_H;
     const ctx = canvas.getContext('2d');
-    arch.rows.forEach((row, y) => {
-      for (let x = 0; x < SPRITE_W; x++) {
-        const c = pal[row[x]];
-        if (!c) continue;
-        ctx.fillStyle = c;
-        ctx.fillRect(x, y, 1, 1);
-      }
-    });
+    for (const [dx, dy] of [[0, 1], [2, 1], [1, 0], [1, 2]]) ctx.drawImage(sil, dx, dy);
+    ctx.drawImage(base, 1, 1);
+
     cache.set(key, canvas);
     return canvas;
   }

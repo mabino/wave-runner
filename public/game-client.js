@@ -22,8 +22,11 @@
   let boltPoints = null;
   const floaters = [];    // {x, y, text, color, bornAt}
 
-  const SAND = '#efd9a7';
-  const SAND_DARK = '#e3c68c';
+  // Golden sand, deliberately shifted away from every avatar skin tone so
+  // players stay visible on the beach.
+  const SAND = '#f0cd74';
+  const SAND_DARK = '#d9b45b';
+  const SAND_WET = '#c9a254';
 
   function init(el) {
     canvas = el;
@@ -169,7 +172,7 @@
     ctx.fillStyle = SAND;
     ctx.fillRect(0, beachTop, W, H - beachTop);
     // Wet sand lip at the waterline.
-    ctx.fillStyle = '#d8ba82';
+    ctx.fillStyle = SAND_WET;
     ctx.fillRect(0, beachTop, W, 6);
     // Sand speckle.
     ctx.fillStyle = SAND_DARK;
@@ -299,7 +302,7 @@
     } else if (p.action === 'dive') {
       // Under the surface: just a hint of the body + ripples.
       ctx.globalAlpha *= 0.45;
-      ctx.drawImage(sprite, 0, 0, 12, 7, x - w / 2, y - h * 0.18, w, h * 0.44);
+      ctx.drawImage(sprite, 0, 0, sprite.width, 8, x - w / 2, y - h * 0.18, w, h * 0.44);
       ctx.globalAlpha = 1;
       ctx.strokeStyle = 'rgba(255,255,255,.7)';
       ctx.lineWidth = 1.5;
@@ -318,10 +321,15 @@
       ctx.fillText('💫', x, y - h * 0.6);
     } else if (inWater) {
       // Wading: lower half in the water.
-      ctx.drawImage(sprite, 0, 0, 12, 11, x - w / 2, y - h * 0.62, w, h * 0.69);
+      ctx.drawImage(sprite, 0, 0, sprite.width, 12, x - w / 2, y - h * 0.62, w, h * 0.69);
       ctx.fillStyle = 'rgba(255,255,255,.5)';
       ctx.fillRect(x - w / 2, y + h * 0.05, w, 2);
     } else {
+      // Grounding shadow keeps the sprite readable against the sand.
+      ctx.fillStyle = 'rgba(90, 60, 20, .3)';
+      ctx.beginPath();
+      ctx.ellipse(x, y + h * 0.27, w * 0.42, 4, 0, 0, Math.PI * 2);
+      ctx.fill();
       ctx.drawImage(sprite, x - w / 2, y - h * 0.75, w, h);
       if (p.state === 'resting') drawUmbrella(x + w * 0.55, y + 6, '#0aa5a0');
     }
@@ -428,7 +436,15 @@
     drawFloaters();
   }
 
-  function start() { if (!running) { running = true; requestAnimationFrame(frame); } }
+  function start() {
+    // The canvas lives on a display:none screen until the game begins, so
+    // its client size is 0×0 at init time. Re-measure now that the screen
+    // is visible — and once more a frame later for iOS Safari, whose
+    // layout can settle after the class flip.
+    resize();
+    requestAnimationFrame(resize);
+    if (!running) { running = true; requestAnimationFrame(frame); }
+  }
   function stop() { running = false; }
 
   function flash(targetWorldX) {
