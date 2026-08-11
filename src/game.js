@@ -18,7 +18,8 @@ const DEFAULTS = {
   maxHp: 100,
 
   beachY: 66,               // mean waterline; y >= waterline() is sand
-  deepY: 22,                // y < deepY is too far out (lifeguard territory)
+  deepY: 22,                // buoy line: wildlife and drops stay shoreward of it
+  outerY: -78,              // the true swim limit, a full screen beyond the buoys
   flagMinX: 20,             // swim between the flags
   flagMaxX: 80,
 
@@ -35,7 +36,7 @@ const DEFAULTS = {
   waveIntervalMax: 7,
   hitRange: 3,              // wave front proximity that triggers resolution
 
-  jumpDuration: 0.9,        // airtime seconds
+  jumpDuration: 0.65,       // airtime seconds — snappy, not floaty
   diveDuration: 1.4,        // underwater seconds
   actionCooldown: 0.5,
   diveHpCost: 2,            // diving is tiring...
@@ -67,6 +68,7 @@ const DEFAULTS = {
   ripMinGap: 35,    ripMaxGap: 70,
   ripDurMin: 18,    ripDurMax: 28,
   ripHalfWidth: 6,  ripPull: 12,   ripHpPerSec: 4,
+  ripFadeSec: 3,    // rips build up and die down, not on/off
 
   planeMinGap: 22,          // seconds between banner-plane passes
   planeMaxGap: 40,
@@ -284,7 +286,7 @@ class WaveRunnerGame {
     p.steer = null;
     p.target = {
       x: Math.max(2, Math.min(98, Number(x) || 0)),
-      y: Math.max(8, Math.min(92, Number(y) || 0)),
+      y: Math.max(this.cfg.outerY - 14, Math.min(92, Number(y) || 0)),
       run: !!run,
     };
   }
@@ -378,18 +380,40 @@ class WaveRunnerGame {
     // No shoving from under the water or under the sand.
     if (this._actionActive(p, 'dive') || this._actionActive(p, 'dig')) return;
 
+    const waterline = this.waterline();
+    const reach = p.npc ? this.cfg.npcShoveRadius : this.cfg.shoveRadius;
+
     // Nearest other beachgoer within arm's reach who is in the water —
     // and reachable: a diver is under the surface, a digger under the sand.
     // The lunge-assist range compensates humans for touch imprecision;
     // NPCs have perfect aim, so their reach is much shorter.
     let target = null;
-    let best = p.npc ? this.cfg.npcShoveRadius : this.cfg.shoveRadius;
+    let best = reach;
     for (const q of this._alivePlayers()) {
-      if (q.id === id || q.state === 'washed' || q.y >= this.waterline()) continue;
+      if (q.id === id || q.state === 'washed' || q.y >= waterline) continue;
       if (this._actionActive(q, 'dive') || this._actionActive(q, 'dig')) continue;
       const d = this._dist(p, q);
       if (d <= best) { best = d; target = q; }
     }
+
+    // On the sand, beach wildlife is fair game too: punt a nearby crab and
+    // it scurries off before it can pinch. Ocean wildlife can't be shoved.
+    if (p.y >= waterline) {
+      let crab = null;
+      let crabDist = Math.min(best, reach);
+      for (const h of this.hazards) {
+        if (h.kind !== 'crab' || h.y < waterline) continue;
+        const d = this._dist(p, h);
+        if (d <= crabDist) { crabDist = d; crab = h; }
+      }
+      if (crab && (!target || crabDist < best)) {
+        p.shoveReadyAt = this.t + this.cfg.shoveCooldown;
+        crab.vx = (crab.x >= p.x ? 1 : -1) * this.cfg.crabSpeed * 3;
+        this._emit({ type: 'crab-shoved', playerId: id });
+        return;
+      }
+    }
+
     if (!target) {
       // A whiffed shove costs nothing but tells the player it registered.
       this._emit({ type: 'shove-miss', playerId: id });
@@ -401,7 +425,7 @@ class WaveRunnerGame {
     // Lunge to contact: close the gap for the shover so touch positioning
     // doesn't have to be pixel-perfect.
     p.x = Math.max(2, Math.min(98, target.x + (p.x <= target.x ? -3 : 3)));
-    p.y = Math.max(8, Math.min(92, target.y));
+    p.y = Math.max(this.cfg.outerY - 14, Math.min(92, target.y));
     p.target = null;
     p.pendingRest = false;
     p.pendingPickup = null;
@@ -615,7 +639,7 @@ class WaveRunnerGame {
 
       if (p.steer) {
         p.x = Math.max(2, Math.min(98, p.x + p.steer.x * speed * dt));
-        p.y = Math.max(8, Math.min(92, p.y + p.steer.y * speed * dt));
+        p.y = Math.max(this.cfg.outerY - 14, Math.min(92, p.y + p.steer.y * speed * dt));
       } else if (p.target) {
         const d = this._dist(p, p.target);
         const step = speed * dt;
@@ -752,7 +776,7 @@ class WaveRunnerGame {
     for (const p of this._alivePlayers()) {
       const inWater = p.y < this.waterline();
       const outOfBounds = inWater &&
-        (p.x < this.cfg.flagMinX || p.x > this.cfg.flagMaxX || p.y < this.cfg.deepY);
+        (p.x < this.cfg.flagMinX || p.x > this.cfg.flagMaxX || p.y < this.cfg.outerY);
 
       if (!outOfBounds) {
         p.outSince = null;
@@ -807,7 +831,7 @@ class WaveRunnerGame {
       }
       this.pendingStrike = {
         x: Math.max(5, Math.min(95, x)),
-        y: Math.min(waterline - 3, Math.max(4, y)),
+        y: Math.min(waterline - 3, Math.max(this.cfg.outerY - 10, y)),
         at: this.t + this.cfg.lightningTelegraphSec,
       };
       this._emit({ type: 'lightning-warn', x: this.pendingStrike.x, y: this.pendingStrike.y });
@@ -837,11 +861,21 @@ class WaveRunnerGame {
 
   // ─── Rip current ──────────────────────────────────────────────────────────
 
+  // 0..1 envelope: rips fade in over ripFadeSec, hold, then fade back out.
+  ripStrength() {
+    if (!this.rip) return 0;
+    const fade = this.cfg.ripFadeSec;
+    return Math.max(0, Math.min(1,
+      (this.t - this.rip.start) / fade,
+      (this.rip.until - this.t) / fade));
+  }
+
   _ripCurrent(dt) {
     const cfg = this.cfg;
     if (!this.rip && this.t >= this.nextRipAt) {
       this.rip = {
         x: this._rand(cfg.flagMinX + 5, cfg.flagMaxX - 5),
+        start: this.t,
         until: this.t + this._rand(cfg.ripDurMin, cfg.ripDurMax),
         caught: new Set(),
       };
@@ -853,6 +887,7 @@ class WaveRunnerGame {
       this.nextRipAt = this.t + this._rand(cfg.ripMinGap, cfg.ripMaxGap);
       return;
     }
+    const strength = this.ripStrength();
     const waterline = this.waterline();
     for (const p of this._alivePlayers()) {
       if (p.state === 'washed' || p.y >= waterline) continue;
@@ -862,9 +897,9 @@ class WaveRunnerGame {
         this._emit({ type: 'rip-caught', playerId: p.id });
       }
       // Dragged out to sea, HP bleeding — swim sideways (or sprint hard
-      // shoreward) to break free.
-      p.y = Math.max(2, p.y - cfg.ripPull * dt);
-      this._applyDamage(p, cfg.ripHpPerSec * dt, 'rip');
+      // shoreward) to break free. A building or dying rip pulls gently.
+      p.y = Math.max(cfg.outerY - 14, p.y - cfg.ripPull * strength * dt);
+      this._applyDamage(p, cfg.ripHpPerSec * strength * dt, 'rip');
       if (p.state !== 'out' && p.y <= cfg.deepY) {
         // Past the deep line: the lifeguard swims out and hauls them in
         // for an extended cooldown on the sand.
@@ -1131,6 +1166,7 @@ class WaveRunnerGame {
         maxX: this.cfg.flagMaxX,
         deepY: this.cfg.deepY,
         beachY: Math.round(this.waterline() * 10) / 10,   // the live sand line
+        outerY: this.cfg.outerY,
         danger: this.surfDanger(),
       },
       strike: this.pendingStrike ? {
@@ -1142,6 +1178,7 @@ class WaveRunnerGame {
       rip: this.rip ? {
         x: Math.round(this.rip.x * 10) / 10,
         halfW: this.cfg.ripHalfWidth,
+        strength: Math.round(this.ripStrength() * 100) / 100,
       } : null,
       players: Object.values(this.players).map(p => ({
         id: p.id,

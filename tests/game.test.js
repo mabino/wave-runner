@@ -288,9 +288,16 @@ describe('lifeguard', () => {
     expect(p.y).toBeGreaterThanOrEqual(game.cfg.beachY);   // hauled ashore
   });
 
-  test('swimming too far out also triggers the lifeguard', () => {
+  test('the open water beyond the buoys is fair game now', () => {
     const game = makeGame();
-    addSwimmer(game, 'p1', 15, 50);   // above deepY=22
+    addSwimmer(game, 'p1', 15, 50);   // past the buoy line — allowed these days
+    const events = run(game, 3);
+    expect(events.find(e => e.type === 'whistle')).toBeUndefined();
+  });
+
+  test('swimming past the outer limit still triggers the lifeguard', () => {
+    const game = makeGame();
+    addSwimmer(game, 'p1', game.cfg.outerY - 5, 50);
     const events = run(game, 2.5);
     expect(events.find(e => e.type === 'whistle')).toBeDefined();
   });
@@ -1346,5 +1353,53 @@ describe('rip currents', () => {
     run(game, 0.3);
     expect(game.rip).toBeNull();
     expect(game.snapshot().rip).toBeNull();
+  });
+});
+
+describe('open ocean, crab shoves and rip fade', () => {
+  test('players can swim a full screen beyond the buoys', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 30, 50);
+    game.handleSteer('p1', 0, -1);
+    const events = run(game, 4);                 // 40 units out to sea
+    expect(p.y).toBeCloseTo(-10, 0);             // well past the old deepY=22
+    expect(events.find(e => e.type === 'whistle')).toBeUndefined();
+    expect(game.snapshot().flags.outerY).toBe(game.cfg.outerY);
+  });
+
+  test('a beachgoer punts a crab on the sand', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 80, 50);            // on the sand
+    const crab = addHazard(game, 'crab', 55, 80, -7);    // scuttling toward them
+    game.handleShove('p1');
+    const events = game.tick(0.1);
+    expect(events.find(e => e.type === 'crab-shoved')).toBeTruthy();
+    expect(crab.vx).toBeGreaterThan(0);                  // sent packing, away
+    expect(p.shoveReadyAt).toBeGreaterThan(game.t);      // cooldown consumed
+  });
+
+  test('wildlife in the ocean cannot be shoved', () => {
+    const game = makeGame();
+    addSwimmer(game, 'p1', 40, 50);                      // swimming
+    const crab = addHazard(game, 'crab', 52, 80, -7);    // crab ashore, shover afloat
+    const jelly = addHazard(game, 'jelly', 60, 40, 0);
+    game.handleShove('p1');
+    const events = game.tick(0.1);
+    expect(events.find(e => e.type === 'crab-shoved')).toBeUndefined();
+    expect(events.find(e => e.type === 'shove-miss')).toBeTruthy();
+    expect(crab.vx).toBe(-7);                            // still inbound
+    expect(jelly.vx).toBe(0);
+  });
+
+  test('rip currents fade in and back out', () => {
+    const game = makeGame();
+    game.nextRipAt = 0.05;
+    run(game, 0.2);
+    expect(game.snapshot().rip.strength).toBeLessThan(0.2);   // just building
+    run(game, game.cfg.ripFadeSec + 0.2);
+    expect(game.snapshot().rip.strength).toBe(1);             // full force
+    game.rip.until = game.t + 1;
+    run(game, 0.5);
+    expect(game.snapshot().rip.strength).toBeLessThan(0.5);   // dying down
   });
 });

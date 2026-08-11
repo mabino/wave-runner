@@ -36,18 +36,22 @@ keyboard setup is detected). Served at `binolabs.com/waves/`.
   When a **thunderstorm** hour arrives, being in the water risks a lightning
   strike — but every bolt is telegraphed: the doomed patch of water glows
   for a moment first, so a sharp swimmer can clear out (or wear the body
-  suit and ignore it).
+  suit and ignore it). Only the glowing endpoint is dangerous — the bolt's
+  zigzag path through the sky hurts no one it crosses.
 - **Lifeguard flags** read the surf danger and update live: one yellow
   (easy), two yellow (lively), one red (rough), two red (double red —
   respect the ocean). Rougher late-day sets, a fast high tide, and storm
   weather all raise the level.
-- **Lifeguards** whistle anyone beyond the flags or too far out; linger and
-  they haul you in with an HP penalty.
-- **Rip currents** open now and then: a subtly darker channel of outbound
-  foam that drags anyone in it further and further out to sea while
-  draining HP fast. Swim **parallel to the beach** to escape (or sprint
-  hard shoreward); otherwise the lifeguard hauls you out past the deep
-  line for an extended cooldown on the sand.
+- **Open ocean**: the red buoys mark the surf zone, but you may swim a
+  full screen past them — the camera follows you out until the beach
+  drops out of sight, and a white buoy line marks the true outer limit.
+- **Lifeguards** whistle anyone beyond the side flags or past the outer
+  buoy line; linger and they haul you in with an HP penalty.
+- **Rip currents** build up, hold, and die back down: a subtly darker
+  channel of outbound foam that drags anyone in it further and further
+  out to sea while draining HP fast. Swim **parallel to the beach** to
+  escape (or sprint hard shoreward); anyone dragged past the buoys gets
+  a lifeguard rescue and an extended cooldown on the sand.
 - Scores are **Pleasant Points (ppts)** — waves, streaks, perfect reads,
   dive premiums, and scooped salps all pay into the same tally.
 - **Umbrella** (⛱️ button): stretch out in the shade beneath your umbrella
@@ -69,7 +73,8 @@ keyboard setup is detected). Served at `binolabs.com/waves/`.
 - **Wildlife**: 🦈 sharks sweep the water (heavy bite, washed ashore),
   🪼 jellyfish drift and sting, 🦀 crabs scuttle the sand and pinch
   resting campers awake, and 🐦 seagulls swoop to steal dropped power-ups
-  before you reach them.
+  before you reach them. On the sand, the Shove button also punts an
+  incoming crab away before it can pinch — ocean wildlife can't be shoved.
 - In a **multiplayer** game, the last beachgoer still standing wins the
   day by default; solo days run until the clock or the ocean says
   otherwise.

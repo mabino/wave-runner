@@ -565,7 +565,7 @@
       case 'lightning': {
         Beach.sfx.thunder();
         if (ev.playerId !== null) Beach.sfx.zap();
-        GameRenderer.flash(ev.x ?? null);   // bolt lands on the telegraphed spot
+        GameRenderer.flash(ev.x ?? null, ev.y ?? null);   // bolt lands on the telegraphed spot
         if (mine) toast(ev.blocked ? '🦺 The body suit took the bolt!' : '⚡ Struck by lightning!', ev.blocked ? 'warn' : 'danger');
         break;
       }
@@ -640,6 +640,9 @@
         break;
       case 'crab-pinch':
         if (mine) { Beach.sfx.pinch(); toast('🦀 Crab pinch! Ow!', 'danger'); }
+        break;
+      case 'crab-shoved':
+        if (mine) { Beach.sfx.splash(); toast('🦀 Punted! The crab scurries off'); }
         break;
       case 'gull-swoop':
         Beach.sfx.squawk();

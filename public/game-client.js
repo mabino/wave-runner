@@ -49,14 +49,19 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
+  // Vertical camera: the classic view is world y 0..100, but the ocean now
+  // extends a full extra screen upward (to flags.outerY). The camera pans up
+  // as "me" swims out, leaving the beach behind.
+  let camY = 0;
+
   const sx = (x) => (x / 100) * W;
-  const sy = (y) => (y / 100) * H;
+  const sy = (y) => ((y - camY) / 100) * H;
 
   function screenToWorld(px, py) {
     const rect = canvas.getBoundingClientRect();
     return {
       x: ((px - rect.left) / rect.width) * 100,
-      y: ((py - rect.top) / rect.height) * 100,
+      y: camY + ((py - rect.top) / rect.height) * 100,
     };
   }
 
@@ -230,9 +235,10 @@
     }
   }
 
-  function drawBuoys(deepY) {
-    const y = sy(deepY);
-    ctx.fillStyle = '#e0403c';
+  function drawBuoys(worldY, color) {
+    const y = sy(worldY);
+    if (y < -8 || y > H + 8) return;
+    ctx.fillStyle = color;
     const bob = Math.sin(performance.now() / 500) * 2;
     for (let x = 30; x < W; x += 90) {
       ctx.beginPath();
@@ -562,16 +568,20 @@
   }
 
   // A rip current: a subtly darker channel with foam streaking out to sea.
+  // It builds and dies with the server's strength envelope.
   function drawRip(r, beachTop) {
+    const s = r.strength !== undefined ? r.strength : 1;
+    if (s <= 0.02) return;
     const x0 = sx(r.x - r.halfW);
     const x1 = sx(r.x + r.halfW);
     const top = sy(snap.flags.deepY);
     const h = beachTop - top;
-    ctx.fillStyle = 'rgba(8, 30, 48, 0.15)';
+    if (h <= 0) return;
+    ctx.fillStyle = `rgba(8, 30, 48, ${0.15 * s})`;
     ctx.fillRect(x0, top, x1 - x0, h);
     // Outbound foam streaks, drifting toward the horizon.
     const t = performance.now() / 1000;
-    ctx.fillStyle = 'rgba(255,255,255,0.16)';
+    ctx.fillStyle = `rgba(255,255,255,${0.16 * s})`;
     const lanes = 4;
     for (let i = 0; i < lanes; i++) {
       const lx = x0 + ((i + 0.5) / lanes) * (x1 - x0) + Math.sin(t + i * 2) * 3;
@@ -634,11 +644,20 @@
     if (canvas.clientWidth !== W || canvas.clientHeight !== H) resize();
     if (!snap || W === 0 || H === 0) return;
 
+    // Camera follows me out to sea; eases home when I swim back.
+    const meNow = snap.players.find(p => p.id === myId);
+    const camTarget = meNow
+      ? Math.max((snap.flags.outerY ?? 0) - 4, Math.min(0, meNow.y - 32))
+      : 0;
+    camY += (camTarget - camY) * 0.08;
+    if (Math.abs(camY - camTarget) < 0.05) camY = camTarget;
+
     const beachTop = sy(snap.flags.beachY);
     const br = bracket();
     drawOcean(beachTop);
     if (snap.rip) drawRip(snap.rip, beachTop);
-    drawBuoys(snap.flags.deepY);
+    drawBuoys(snap.flags.deepY, '#e0403c');
+    if (snap.flags.outerY !== undefined) drawBuoys(snap.flags.outerY, '#ffffff');
     for (const w of lerpedWaves(br)) drawWave(w, beachTop);
     if (snap.strike) drawStrikeWarning(snap.strike);
     drawBeach(beachTop);
@@ -675,23 +694,30 @@
     // its client size is 0×0 at init time. Re-measure now that the screen
     // is visible — and once more a frame later for iOS Safari, whose
     // layout can settle after the class flip.
+    camY = 0;
     resize();
     requestAnimationFrame(resize);
     if (!running) { running = true; requestAnimationFrame(frame); }
   }
   function stop() { running = false; }
 
-  function flash(targetWorldX) {
+  // The bolt zigzags from the sky down to its true endpoint — the same
+  // spot the telegraph glow marked, where the damage actually lands.
+  function flash(targetWorldX, targetWorldY) {
     flashUntil = performance.now() + 350;
-    const x = targetWorldX !== null && targetWorldX !== undefined ? sx(targetWorldX) : Math.random() * W;
+    const hasSpot = targetWorldX !== null && targetWorldX !== undefined;
+    const x = hasSpot ? sx(targetWorldX) : Math.random() * W;
+    const endY = targetWorldY !== null && targetWorldY !== undefined
+      ? sy(targetWorldY)
+      : H * 0.55;
     boltPoints = [];
     let bx = x, by = 0;
-    while (by < H * 0.5) {
+    while (by < endY - 15) {
       boltPoints.push([bx, by]);
       bx += (Math.random() - 0.5) * 30;
       by += 20 + Math.random() * 25;
     }
-    boltPoints.push([x, H * 0.55]);
+    boltPoints.push([x, endY]);
   }
 
   function addFloater(x, y, text, color = '#fff') {
