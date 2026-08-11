@@ -1518,3 +1518,27 @@ describe('wave endpoints and intensity gradient', () => {
     expect(w.fade).toBeCloseTo(0.42, 1);
   });
 });
+
+describe('swells beyond the break', () => {
+  test('waves slide harmlessly under open-water swimmers', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 10, 50);   // beyond the buoy line
+    sendWave(game, 3, 2);                       // thumper bearing down on them
+    const events = run(game, 1.5);
+    expect(events.find(e => e.type === 'wave-result')).toBeUndefined();
+    expect(p.hp).toBe(100);
+    expect(p.state).toBe('idle');               // never washed ashore
+  });
+
+  test('the same wave still breaks on the surf zone crowd', () => {
+    const game = makeGame();
+    const deep = addSwimmer(game, 'deep', 10, 30);
+    const surf = addSwimmer(game, 'surf', 40, 70);
+    sendWave(game, 2, 4);                       // starts above both
+    const events = run(game, 4);
+    const results = events.filter(e => e.type === 'wave-result');
+    expect(results.map(r => r.playerId)).toEqual(['surf']);
+    expect(deep.hp).toBe(100);
+    expect(surf.state).toBe('washed');          // stood through a roller
+  });
+});

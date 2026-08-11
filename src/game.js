@@ -637,6 +637,10 @@ class WaveRunnerGame {
       w.y += WAVE_TYPES[w.size].speed * speedFactor * dt;
       for (const p of this._alivePlayers()) {
         if (p.y >= waterline) continue;                // on the sand — safe
+        // Beyond the break (the buoy line), waves are unbroken swells that
+        // slide underneath harmlessly — they only break, wipe, and pay in
+        // the surf zone. This is what makes the open ocean swimmable.
+        if (p.y < this.cfg.deepY) continue;
         if (this._actionActive(p, 'vanish')) continue; // off the playfield
         if (w.resolved.has(p.id)) continue;
         if (this._waveFrontY(w, p.x) >= p.y - this.cfg.hitRange) {
@@ -803,7 +807,8 @@ class WaveRunnerGame {
       if (!p.npc || p.state === 'out' || p.state === 'washed') continue;
 
       // Wave reading runs every tick — the reaction window is sub-second.
-      if (p.state === 'idle' && p.y < waterline && !p.action) {
+      // (Only in the surf zone; beyond the break, swells are harmless.)
+      if (p.state === 'idle' && p.y < waterline && p.y >= this.cfg.deepY && !p.action) {
         let threat = null;
         let soonest = Infinity;
         for (const w of this.waves) {
