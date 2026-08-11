@@ -216,6 +216,34 @@
     if (bwTop < H) drawBoardwalk(bwTop);
   }
 
+  // The Bait & Tackle shop: a little shack on the boardwalk.
+  function drawShop(s) {
+    const x = sx(s.x), y = sy(s.y);
+    if (y < -60 || y > H + 60) return;
+    // Walls.
+    ctx.fillStyle = '#6d4f2e';
+    ctx.fillRect(x - 26, y - 26, 52, 30);
+    ctx.fillStyle = '#5a3f22';
+    ctx.fillRect(x - 26, y - 26, 52, 4);
+    // Door + window.
+    ctx.fillStyle = '#3c2a14';
+    ctx.fillRect(x - 6, y - 12, 12, 16);
+    ctx.fillStyle = '#bfe3ef';
+    ctx.fillRect(x - 20, y - 18, 9, 8);
+    ctx.fillRect(x + 11, y - 18, 9, 8);
+    // Striped awning.
+    for (let i = 0; i < 6; i++) {
+      ctx.fillStyle = i % 2 ? '#ffffff' : '#e0403c';
+      ctx.fillRect(x - 30 + i * 10, y - 34, 10, 8);
+    }
+    // Sign.
+    ctx.font = '700 9px system-ui';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = '#ffd97b';
+    ctx.fillText('🎣 BAIT & TACKLE', x, y - 38);
+  }
+
   // The boardwalk behind the beach — just weathered planks for now.
   function drawBoardwalk(top) {
     ctx.fillStyle = '#9b7648';
@@ -641,6 +669,8 @@
     if (p.buffs.bodysuit > 0) pip += '🦺';
     if (p.buffs.bodyboard > 0) pip += '🛹';
     if (p.buffs.blanket > 0) pip += '🧺';
+    if (p.bait > 0) pip += '🪱';
+    if (p.fish > 0) pip += '🐟'.repeat(Math.min(3, p.fish));
     if (pip) {
       ctx.font = '10px system-ui';
       ctx.fillText(pip, x, y - h * 1.02 + 12);
@@ -774,6 +804,7 @@
     }
     const towerY = sy(snap.flags.beachY + (bwY - snap.flags.beachY) * 0.45);
     if (towerY > -60 && towerY < H + 60) drawLifeguardTower(towerY);
+    if (snap.shop) drawShop(snap.shop);
     for (const g of (snap.lifeguards || [])) drawRescueSwimmer(g);
 
     for (const u of snap.powerups) drawPowerup(u);

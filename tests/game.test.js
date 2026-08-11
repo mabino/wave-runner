@@ -1613,3 +1613,68 @@ describe('the boardwalk', () => {
     expect(p.burrowCombo).toBe(0);               // the press never counted
   });
 });
+
+describe('storm flags and the Bait & Tackle shop', () => {
+  test('storm weather is an automatic double red', () => {
+    const game = makeGame();
+    game.hours = game.hours.map(() => 'storm');
+    expect(game.surfDanger()).toBe(3);           // even at 9 AM, slack tide
+  });
+
+  test('the shop sells one worm per visit', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', game.cfg.shopY, game.cfg.shopX);
+    p.score = 50;
+    const events = run(game, 0.3);
+    expect(events.find(e => e.type === 'bait-bought')).toBeTruthy();
+    expect(p.bait).toBe(1);
+    expect(p.score).toBe(50 - game.cfg.baitCost);
+    run(game, 2);                                // loitering doesn't re-buy
+    expect(p.bait).toBe(1);
+    expect(p.score).toBe(50 - game.cfg.baitCost);
+  });
+
+  test('soaked bait lures a fish — but only in the water', () => {
+    const game = makeGame();
+    const wet = addSwimmer(game, 'wet', 40, 50);
+    const dry = addSwimmer(game, 'dry', 80, 70);
+    wet.bait = 1;
+    dry.bait = 1;
+    const events = run(game, 10);                // lure fires at ~9s
+    expect(events.find(e => e.type === 'fish-caught' && e.playerId === 'wet')).toBeTruthy();
+    expect(wet.fish).toBe(1);
+    expect(wet.bait).toBe(0);
+    expect(dry.fish).toBe(0);
+    expect(dry.bait).toBe(1);
+  });
+
+  test('a carried fish buys off a shark attack', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 40, 50);
+    p.fish = 1;
+    addHazard(game, 'shark', 50, 40, 0);
+    const events = run(game, 0.2);
+    expect(events.find(e => e.type === 'fish-taken')).toBeTruthy();
+    expect(events.find(e => e.type === 'shark-attack')).toBeUndefined();
+    expect(p.fish).toBe(0);
+    expect(p.hp).toBe(100);
+    expect(p.state).toBe('idle');
+
+    addHazard(game, 'shark', 50.5, 40, 0);       // no fish left this time
+    const events2 = run(game, 0.2);
+    expect(events2.find(e => e.type === 'shark-attack')).toBeTruthy();
+    expect(p.hp).toBe(100 - game.cfg.sharkDamage);
+  });
+
+  test('the shop buys the catch, then restocks the worm', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', game.cfg.shopY, game.cfg.shopX);
+    p.fish = 2;
+    const events = run(game, 0.3);
+    const sale = events.find(e => e.type === 'fish-sold');
+    expect(sale).toMatchObject({ count: 2, points: 2 * game.cfg.fishSellPoints });
+    expect(p.fish).toBe(0);
+    expect(p.bait).toBe(1);                      // restocked from the proceeds
+    expect(p.score).toBe(2 * game.cfg.fishSellPoints - game.cfg.baitCost);
+  });
+});

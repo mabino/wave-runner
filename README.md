@@ -52,8 +52,8 @@ keyboard setup is detected). Served at `binolabs.com/waves/`.
   zigzag path through the sky hurts no one it crosses.
 - **Lifeguard flags** read the surf danger and update live: one yellow
   (easy), two yellow (lively), one red (rough), two red (double red —
-  respect the ocean). Rougher late-day sets, a fast high tide, and storm
-  weather all raise the level.
+  respect the ocean). Rougher late-day sets and a fast high tide raise
+  the level; lightning weather is an automatic double red.
 - **Open ocean**: the red buoys mark the surf zone, but you may swim a
   full screen past them — the camera follows you out until the beach
   drops out of sight, and a white buoy line marks the true outer limit.
@@ -73,7 +73,12 @@ keyboard setup is detected). Served at `binolabs.com/waves/`.
   the rip carries you to the top before the lifeguard arrives, you're
   **swept out to sea** and your beach day is over.
 - **The boardwalk**: scroll down past the back of the beach and walk up
-  onto the planks (empty for now — no digging through them).
+  onto the planks (no digging through them). The **🎣 Bait & Tackle**
+  shack trades on contact, once per visit: it buys your catch (25 ppts
+  per fish) and sells a worm of bait (10 ppts). Soak the bait by
+  standing in the water and something will bite within a dozen seconds;
+  a carried fish also buys off a **shark attack** — the shark takes the
+  fish and leaves you whole.
 - Scores are **Pleasant Points (ppts)** — waves, streaks, perfect reads,
   dive premiums, and scooped salps all pay into the same tally.
 - **Umbrella** (⛱️ button): stretch out in the shade beneath your umbrella

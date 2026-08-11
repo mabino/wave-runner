@@ -22,10 +22,15 @@ app.use(express.json());
 // Serve the socket.io client bundle explicitly so it is always available,
 // even in environments where the prepare script did not run (e.g. bare npm ci).
 app.get('/socket.io/socket.io.js', (_req, res) => {
+  res.set('Cache-Control', 'no-cache');
   res.sendFile(require.resolve('socket.io/client-dist/socket.io.js'));
 });
 
-app.use(express.static(path.join(__dirname, 'public')));
+// no-cache keeps the CDN edge from serving stale js/css after a deploy —
+// a fresh index.html referencing last week's app.js is how buttons die.
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res) => res.set('Cache-Control', 'no-cache'),
+}));
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', rooms: roomManager.rooms.size });

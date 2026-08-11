@@ -226,6 +226,12 @@ input[type="text"]::placeholder { color: rgba(255,255,255,.45); }
   right: 14px;
   width: 34px;
   height: 34px;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
   border-radius: 50%;
   border: 1px solid rgba(255,255,255,.3);
   background: rgba(255,255,255,.08);
@@ -233,6 +239,7 @@ input[type="text"]::placeholder { color: rgba(255,255,255,.45); }
   font-size: 1.05rem;
   font-weight: 700;
   cursor: pointer;
+  z-index: 5;
 }
 .help-btn:hover { background: rgba(255,255,255,.18); }
 .help-overlay {

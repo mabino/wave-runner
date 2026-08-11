@@ -255,6 +255,8 @@
     if (me.buffs.bodyboard > 0) buffs.push(`🛹 ${Math.ceil(me.buffs.bodyboard)}s`);
     if (me.buffs.blanket > 0) buffs.push(`🧺 ${Math.ceil(me.buffs.blanket)}s`);
     if (me.pail) buffs.push('🪣');
+    if (me.bait > 0) buffs.push('🪱');
+    if (me.fish > 0) buffs.push(`🐟×${me.fish}`);
     if (me.runReadyIn > 0) buffs.push(`💨 ${Math.ceil(me.runReadyIn)}s`);
     $('hud-buffs').innerHTML = buffs.map(b => `<span class="buff-chip">${b}</span>`).join('');
 
@@ -670,6 +672,25 @@
         toast(mine
           ? '🌊 Swept out to sea… your beach day is over'
           : `🌊 ${snapName(ev.playerId)} was swept out to sea!`, 'danger');
+        break;
+      case 'bait-bought':
+        if (mine) { Beach.sfx.pickup(); toast(`🪱 Bait bought (−${ev.cost} ppts) — soak it in the surf`); }
+        break;
+      case 'fish-caught':
+        if (mine) { Beach.sfx.pickup(); toast('🐟 Something bit — you caught a fish!'); }
+        break;
+      case 'fish-sold':
+        if (mine) {
+          Beach.sfx.shell();
+          toast(`💰 Sold ${ev.count} fish for +${ev.points} ppts`, 'warn');
+          GameRenderer.addFloater(50, 50, `+${ev.points} ppts 💰`, '#7be3a0');
+        }
+        break;
+      case 'fish-taken':
+        Beach.sfx.sharkAlert();
+        toast(mine
+          ? '🦈 The shark took your fish — and left you alone!'
+          : `🦈 A shark took ${snapName(ev.playerId)}'s fish`, 'warn');
         break;
       case 'shark':
         Beach.sfx.sharkAlert();

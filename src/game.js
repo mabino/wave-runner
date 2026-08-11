@@ -21,7 +21,15 @@ const DEFAULTS = {
   deepY: 22,                // buoy line: wildlife and drops stay shoreward of it
   outerY: -78,              // the true swim limit, a full screen beyond the buoys
   boardwalkY: 100,          // planks start here, behind the sand
-  boardwalkBottom: 150,     // ...and end here (empty for now)
+  boardwalkBottom: 150,     // ...and end here
+
+  // The Bait & Tackle shop on the boardwalk: sells bait, buys fish.
+  // Walk into it to trade — one transaction round per visit.
+  shopX: 30, shopY: 118, shopRadius: 8,
+  baitCost: 10,             // ppts for one worm
+  fishSellPoints: 25,       // ppts per fish sold
+  fishLureMin: 6,           // seconds of soaking before a bite
+  fishLureMax: 12,
   flagMinX: 20,             // swim between the flags
   flagMaxX: 80,
 
@@ -246,6 +254,10 @@ class WaveRunnerGame {
       washedUntil: 0,
       buffs: { bodysuit: 0, bodyboard: 0, blanket: 0 },
       pail: false,                   // equipment, kept for the day
+      bait: 0,                       // worms from the Bait & Tackle shop
+      fish: 0,                       // the day's catch (shark insurance)
+      nextFishAt: null,              // pending bite while bait soaks
+      atShop: false,                 // debounce: one trade round per visit
       shoveReadyAt: 0,
       outSince: null,
       whistled: false,
@@ -309,9 +321,11 @@ class WaveRunnerGame {
   // late-day sets, a fast high tide, and storm weather all raise it.
   // 0 yellow · 1 double yellow · 2 red · 3 double red.
   surfDanger() {
+    // Lightning weather is an automatic double red — no arithmetic needed.
+    if (this.weatherNow() === 'storm') return 3;
     const dayFrac = Math.min(1, this.t / this.cfg.dayLengthSec);
     const tideTerm = this.cfg.tideSpeedGain * this.tide() * 1.6;
-    const score = 0.6 * dayFrac + tideTerm + (this.weatherNow() === 'storm' ? 0.35 : 0);
+    const score = 0.6 * dayFrac + tideTerm;
     return score < 0.25 ? 0 : score < 0.55 ? 1 : score < 0.85 ? 2 : 3;
   }
 
@@ -541,6 +555,7 @@ class WaveRunnerGame {
     this._advanceWaves(dt);
     this._npcTick();
     this._movePlayers(dt);
+    this._shopAndFishing();
     this._ripCurrent(dt);
     this._rescues(dt);
     this._lifeguard(dt);
@@ -1057,6 +1072,47 @@ class WaveRunnerGame {
     }
   }
 
+  // ─── Bait & Tackle: the shop, the lure, the catch ─────────────────────────
+
+  _shopAndFishing() {
+    const cfg = this.cfg;
+    const waterline = this.waterline();
+    for (const p of this._alivePlayers()) {
+      if (p.state === 'washed') continue;
+
+      // Shop: sell the catch, then restock a worm — once per visit.
+      const atShop = Math.hypot(p.x - cfg.shopX, p.y - cfg.shopY) <= cfg.shopRadius;
+      if (atShop && !p.atShop) {
+        if (p.fish > 0) {
+          const points = p.fish * cfg.fishSellPoints;
+          p.score += points;
+          this._emit({ type: 'fish-sold', playerId: p.id, count: p.fish, points });
+          p.fish = 0;
+        }
+        if (p.bait === 0 && p.score >= cfg.baitCost) {
+          p.score -= cfg.baitCost;
+          p.bait = 1;
+          this._emit({ type: 'bait-bought', playerId: p.id, cost: cfg.baitCost });
+        }
+      }
+      p.atShop = atShop;
+
+      // Fishing: a soaking worm lures a bite after a while in the water.
+      if (p.bait > 0 && p.y < waterline && !this._actionActive(p, 'vanish')) {
+        if (p.nextFishAt === null) {
+          p.nextFishAt = this.t + this._rand(cfg.fishLureMin, cfg.fishLureMax);
+        } else if (this.t >= p.nextFishAt) {
+          p.bait -= 1;
+          p.fish += 1;
+          p.nextFishAt = null;
+          this._emit({ type: 'fish-caught', playerId: p.id });
+        }
+      } else {
+        p.nextFishAt = null;   // the lure only works while it soaks
+      }
+    }
+  }
+
   // ─── Rescue swimmers ──────────────────────────────────────────────────────
 
   // Anyone rip-dragged past the buoy line gets a lifeguard launched after
@@ -1272,10 +1328,16 @@ class WaveRunnerGame {
 
         if (h.kind === 'shark' && inWater && d <= cfg.hazardRadius + 1 && !h.hit.has(p.id)) {
           h.hit.add(p.id);
-          p.streak = 0;
-          this._washAshore(p);
-          this._emit({ type: 'shark-attack', playerId: p.id });
-          this._applyDamage(p, cfg.sharkDamage, 'shark');
+          if (p.fish > 0) {
+            // A carried fish buys you off: the shark takes it and moves on.
+            p.fish -= 1;
+            this._emit({ type: 'fish-taken', playerId: p.id });
+          } else {
+            p.streak = 0;
+            this._washAshore(p);
+            this._emit({ type: 'shark-attack', playerId: p.id });
+            this._applyDamage(p, cfg.sharkDamage, 'shark');
+          }
         } else if (h.kind === 'jelly' && inWater && d <= cfg.hazardRadius - 1) {
           h.expiresAt = 0;                     // spent on the sting
           this._emit({ type: 'jelly-sting', playerId: p.id });
@@ -1379,6 +1441,7 @@ class WaveRunnerGame {
         boardwalkBottom: this.cfg.boardwalkBottom,
         danger: this.surfDanger(),
       },
+      shop: { x: this.cfg.shopX, y: this.cfg.shopY },
       lifeguards: this.lifeguards.map(g => ({
         id: g.id,
         x: Math.round(g.x * 10) / 10,
@@ -1419,6 +1482,8 @@ class WaveRunnerGame {
           blanket: Math.max(0, Math.round((p.buffs.blanket - this.t) * 10) / 10),
         },
         pail: !!p.pail,
+        bait: p.bait,
+        fish: p.fish,
       })),
       waves: this.waves.map(w => ({
         id: w.id,
