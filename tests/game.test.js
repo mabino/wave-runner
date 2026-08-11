@@ -1520,14 +1520,38 @@ describe('wave endpoints and intensity gradient', () => {
 });
 
 describe('swells beyond the break', () => {
-  test('waves slide harmlessly under open-water swimmers', () => {
+  test('a missed duck-dive sweeps the swimmer shoreward with a sting', () => {
     const game = makeGame();
-    const p = addSwimmer(game, 'p1', 10, 50);   // beyond the buoy line
-    sendWave(game, 3, 2);                       // thumper bearing down on them
+    const p = addSwimmer(game, 'p1', 0, 50);    // beyond the buoy line
+    sendWave(game, 3, -8);                      // swell bearing down on them
     const events = run(game, 1.5);
     expect(events.find(e => e.type === 'wave-result')).toBeUndefined();
+    expect(events.find(e => e.type === 'swell-swept')).toBeTruthy();
+    expect(p.y).toBeCloseTo(0 + game.cfg.swellSweep, 0);   // shoved back
+    expect(p.hp).toBe(100 - game.cfg.swellDamage);
+    expect(p.state).toBe('idle');               // stung, but never washed ashore
+  });
+
+  test('a timed duck-dive slides the swell by harmlessly', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 0, 50);
+    sendWave(game, 3, -4);
+    game.handleAction('p1', 'dive');
+    const events = run(game, 0.5);
+    expect(events.find(e => e.type === 'swell-duck')).toBeTruthy();
+    expect(events.find(e => e.type === 'swell-swept')).toBeUndefined();
+    expect(p.y).toBe(0);                        // held their ground
+    expect(p.hp).toBe(100 - game.cfg.diveHpCost);   // only the dive's cost
+  });
+
+  test('a body board rides over swells without ducking', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 0, 50);
+    p.buffs.bodyboard = 1000;
+    sendWave(game, 3, -4);
+    const events = run(game, 0.5);
+    expect(events.find(e => e.type === 'swell-duck')).toBeTruthy();
     expect(p.hp).toBe(100);
-    expect(p.state).toBe('idle');               // never washed ashore
   });
 
   test('the same wave still breaks on the surf zone crowd', () => {
@@ -1538,7 +1562,8 @@ describe('swells beyond the break', () => {
     const events = run(game, 4);
     const results = events.filter(e => e.type === 'wave-result');
     expect(results.map(r => r.playerId)).toEqual(['surf']);
-    expect(deep.hp).toBe(100);
+    expect(events.find(e => e.type === 'swell-swept' && e.playerId === 'deep')).toBeTruthy();
+    expect(deep.hp).toBe(100 - game.cfg.swellDamage);
     expect(surf.state).toBe('washed');          // stood through a roller
   });
 });

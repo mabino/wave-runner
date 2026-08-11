@@ -40,6 +40,12 @@ const DEFAULTS = {
   waveFadeLen: 30,          // fading waves lose intensity over this run-out
   hitRange: 3,              // wave front proximity that triggers resolution
 
+  // Beyond the buoys, waves are swells: they can't wipe you out, but they
+  // can't be waded through either — duck-dive under them or get swept
+  // back toward shore with a sting.
+  swellSweep: 16,           // shoreward shove for a missed duck-dive
+  swellDamage: 6,
+
   jumpDuration: 0.65,       // airtime seconds — snappy, not floaty
   diveDuration: 1.4,        // underwater seconds
   actionCooldown: 0.5,
@@ -637,15 +643,12 @@ class WaveRunnerGame {
       w.y += WAVE_TYPES[w.size].speed * speedFactor * dt;
       for (const p of this._alivePlayers()) {
         if (p.y >= waterline) continue;                // on the sand — safe
-        // Beyond the break (the buoy line), waves are unbroken swells that
-        // slide underneath harmlessly — they only break, wipe, and pay in
-        // the surf zone. This is what makes the open ocean swimmable.
-        if (p.y < this.cfg.deepY) continue;
         if (this._actionActive(p, 'vanish')) continue; // off the playfield
         if (w.resolved.has(p.id)) continue;
         if (this._waveFrontY(w, p.x) >= p.y - this.cfg.hitRange) {
           w.resolved.add(p.id);
-          this._resolveWave(w, p);
+          if (p.y < this.cfg.deepY) this._resolveSwell(w, p);
+          else this._resolveWave(w, p);
         }
       }
     }
@@ -654,6 +657,24 @@ class WaveRunnerGame {
     const sand = this.waterline();
     this.waves = this.waves.filter(w =>
       w.y - Math.abs(w.slope || 0) * 50 < Math.min(w.endY ?? sand, sand));
+  }
+
+  // Beyond the buoy line, waves are unbroken swells: they never wipe you
+  // to the sand, but no wave out there is a free pass either. Duck-dive
+  // under one (or ride it on a body board) and it slides by; get caught
+  // upright and it sweeps you back toward shore with a sting.
+  _resolveSwell(w, p) {
+    const act = p.action && this.t <= p.action.until ? p.action : null;
+    const passes = (act && act.type === 'dive') || this.t < p.buffs.bodyboard;
+    if (passes) {
+      this._emit({ type: 'swell-duck', playerId: p.id });
+      return;
+    }
+    p.streak = 0;
+    p.target = null;
+    p.y = Math.min(this.waterline() - 2, p.y + this.cfg.swellSweep);
+    this._emit({ type: 'swell-swept', playerId: p.id });
+    this._applyDamage(p, this.cfg.swellDamage, 'swell');
   }
 
   _resolveWave(w, p) {

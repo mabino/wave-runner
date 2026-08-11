@@ -57,8 +57,10 @@ keyboard setup is detected). Served at `binolabs.com/waves/`.
 - **Open ocean**: the red buoys mark the surf zone, but you may swim a
   full screen past them — the camera follows you out until the beach
   drops out of sight, and a white buoy line marks the true outer limit.
-  Out there, waves are unbroken swells that slide beneath you harmlessly:
-  they only break (wipe, and pay points) inside the surf zone.
+  Out there, waves are unbroken swells: they can't wipe you out to the
+  sand, but they're no free pass either — **duck-dive** under each one
+  (or ride it on a body board) or it sweeps you back toward shore with
+  a sting. Waves only break, wipe, and pay points inside the surf zone.
 - **Lifeguards** whistle anyone beyond the side flags or past the outer
   buoy line; linger and they haul you in with an HP penalty.
 - **Rip currents** build up, hold, and die back down: a subtly darker

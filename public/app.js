@@ -615,6 +615,12 @@
       case 'winded':
         if (mine) toast('💨 Winded — catch your breath');
         break;
+      case 'swell-duck':
+        if (mine) { Beach.sfx.splash(); GameRenderer.addFloater(50, 40, '🌊 Ducked under!', '#9fd8ef'); }
+        break;
+      case 'swell-swept':
+        if (mine) { Beach.sfx.wipeout(); toast('🌊 Swept back by a swell — dive under them!', 'warn'); }
+        break;
       case 'jump-combo':
         if (mine) {
           Beach.sfx.combo(ev.combo);
