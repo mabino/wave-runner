@@ -65,16 +65,18 @@ keyboard setup is detected). Served at `binolabs.com/waves/`.
   buoy line; linger and they haul you in with an HP penalty.
 - **Rip currents** build up, hold, and die back down: a subtly darker
   channel of outbound foam that drags anyone in it further and further
-  out to sea while draining HP fast. Swim **parallel to the beach** to
-  escape (or sprint hard shoreward). The channel runs clear to the top
+  out to sea while draining HP fast — the darkened channel is visible
+  along its whole reach, clear to the top of the ocean. Swim **parallel
+  to the beach** to escape (or sprint hard shoreward). The channel runs clear to the top
   of the ocean: anyone dragged past the buoys gets a **rescue swimmer**
   launched after them — red cap, torpedo float — who races the current
   and hauls the caught back to the sand for an extended cooldown. If
   the rip carries you to the top before the lifeguard arrives, you're
   **swept out to sea** and your beach day is over.
 - **The boardwalk**: scroll down past the back of the beach and walk up
-  onto the planks (no digging through them). Walk into the doorway of
-  the **🎣 Bait & Tackle** storefront and you step inside — aisles of
+  onto the planks (no digging through them). The **🎣 Bait & Tackle**
+  storefront is a solid building — walls are walls — and its doorway on
+  the boardwalk side is the only way in. Step through and you're inside — aisles of
   beach sundries, a couple of regulars browsing, and the Skipper at the
   counter. Trading is menu-driven: buy a worm of bait (10 ppts) or sell
   your whole catch (25 ppts per fish), then head back out the door. The

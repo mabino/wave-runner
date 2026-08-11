@@ -26,7 +26,10 @@ const DEFAULTS = {
   // The Bait & Tackle shop on the boardwalk: sells bait, buys fish.
   // Walk into the door to step inside; trading is menu-driven at the
   // counter, and the beach day keeps playing out while you browse.
+  // The building is solid: shopHalfW/shopH give its world footprint,
+  // with the doorway the only way through the south face.
   shopX: 30, shopY: 118, shopDoorRadius: 3.5,
+  shopHalfW: 11, shopH: 12,
   baitCost: 10,             // ppts for one worm
   fishSellPoints: 25,       // ppts per fish sold
   fishLureMin: 6,           // seconds of soaking before a bite
@@ -630,6 +633,23 @@ class WaveRunnerGame {
     p.pendingPickup = null;
   }
 
+  // The Bait & Tackle building is solid — walls stop walkers, and only
+  // the doorway on the south face lets anyone through (where the entry
+  // logic then takes over). Movers are pushed back along the axis they
+  // came from, so walls feel like walls, not glue.
+  _collideShop(p, wasX, wasY) {
+    const cfg = this.cfg;
+    const x0 = cfg.shopX - cfg.shopHalfW;
+    const x1 = cfg.shopX + cfg.shopHalfW;
+    const y0 = cfg.shopY - cfg.shopH;
+    const y1 = cfg.shopY;
+    if (p.x <= x0 || p.x >= x1 || p.y <= y0 || p.y >= y1) return;
+    if (Math.abs(p.x - cfg.shopX) <= cfg.shopDoorRadius && p.y >= y1 - 4) return;   // the doorway
+    if (wasX <= x0 || wasX >= x1) p.x = wasX <= x0 ? x0 : x1;
+    else if (wasY <= y0 || wasY >= y1) p.y = wasY <= y0 ? y0 : y1;
+    else { p.x = wasX; p.y = wasY; }
+  }
+
   // Under the surface or under the sand — no shoving them, no shoving by them.
   _submerged(p) {
     return this._actionActive(p, 'dive') || this._actionActive(p, 'dig')
@@ -869,6 +889,8 @@ class WaveRunnerGame {
           p.y += ((p.target.y - p.y) / d) * step;
         }
       }
+
+      this._collideShop(p, wasX, wasY);
 
       // Orientation & animation flags come from actual displacement, so a
       // player pinned against the world edge stops "walking" in place.
@@ -1496,6 +1518,9 @@ class WaveRunnerGame {
       shop: {
         x: this.cfg.shopX,
         y: this.cfg.shopY,
+        halfW: this.cfg.shopHalfW,
+        h: this.cfg.shopH,
+        doorR: this.cfg.shopDoorRadius,
         baitCost: this.cfg.baitCost,
         fishSellPoints: this.cfg.fishSellPoints,
       },

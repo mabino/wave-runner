@@ -1715,3 +1715,32 @@ describe('storm flags and the Bait & Tackle shop', () => {
     expect(game.handleShopAction('p2', 'buy-bait').success).toBe(false);
   });
 });
+
+describe('shop collision', () => {
+  test('the shop walls stop a walker from the side', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 112, 5);          // level with the building
+    game.handleMove('p1', game.cfg.shopX, 112);        // aim straight through it
+    run(game, 4);
+    expect(p.x).toBeCloseTo(game.cfg.shopX - game.cfg.shopHalfW, 0);   // pinned at the wall
+    expect(p.inShop).toBe(false);
+  });
+
+  test('the back wall blocks the beach-side approach — no sneaking in', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 95, game.cfg.shopX);
+    game.handleMove('p1', game.cfg.shopX, 114);        // walk down into the roof
+    run(game, 3);
+    expect(p.y).toBeCloseTo(game.cfg.shopY - game.cfg.shopH, 0);
+    expect(p.inShop).toBe(false);
+  });
+
+  test('the doorway on the south face still lets you in', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 130, game.cfg.shopX);   // out front
+    game.handleMove('p1', game.cfg.shopX, game.cfg.shopY);   // walk up to the door
+    const events = run(game, 2);
+    expect(events.find(e => e.type === 'shop-enter')).toBeTruthy();
+    expect(p.inShop).toBe(true);
+  });
+});

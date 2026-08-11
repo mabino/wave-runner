@@ -219,11 +219,13 @@
   function drawShop(s) {
     const x = sx(s.x), y = sy(s.y);
     if (y < -110 || y > H + 110) return;
-    const scale = spriteScale();
-    const doorH = window.Sprites.SPRITE_H * scale * 0.95;   // ~avatar height
-    const doorW = window.Sprites.SPRITE_W * scale * 0.85;
-    const bw = doorW * 4.6;                                 // building width
-    const bh = doorH * 1.5;
+    // The building is drawn from its world footprint — the same rectangle
+    // the engine uses for collision, so walls sit exactly where they feel.
+    const halfW = s.halfW ?? 11;
+    const bw = sx(s.x + halfW) - sx(s.x - halfW);
+    const bh = sy(s.y) - sy(s.y - (s.h ?? 12));
+    const doorW = sx(s.x + (s.doorR ?? 3.5)) - sx(s.x - (s.doorR ?? 3.5));
+    const doorH = Math.min(bh * 0.9, window.Sprites.SPRITE_H * spriteScale() * 0.95);
     // Walls with clapboard lines.
     ctx.fillStyle = '#6d4f2e';
     ctx.fillRect(x - bw / 2, y - bh, bw, bh + 4);
@@ -759,13 +761,15 @@
   }
 
   // A rip current: a subtly darker channel with foam streaking out to sea.
-  // It builds and dies with the server's strength envelope.
+  // It builds and dies with the server's strength envelope, and its
+  // shading runs the channel's full reach — clear to the top of the
+  // scrollable ocean, where the rip can actually carry you.
   function drawRip(r, beachTop) {
     const s = r.strength !== undefined ? r.strength : 1;
     if (s <= 0.02) return;
     const x0 = sx(r.x - r.halfW);
     const x1 = sx(r.x + r.halfW);
-    const top = sy(snap.flags.deepY);
+    const top = Math.max(-8, sy((snap.flags.outerY ?? 0) - 22));   // the ocean's very top
     const h = beachTop - top;
     if (h <= 0) return;
     ctx.fillStyle = `rgba(8, 30, 48, ${0.15 * s})`;
@@ -778,7 +782,8 @@
       const lx = x0 + ((i + 0.5) / lanes) * (x1 - x0) + Math.sin(t + i * 2) * 3;
       const ph = ((t * 26 + i * 41) % h);
       ctx.fillRect(lx - 1, beachTop - ph - 8, 2, 8);
-      ctx.fillRect(lx - 1, beachTop - ((ph + h * 0.5) % h) - 6, 2, 6);
+      ctx.fillRect(lx - 1, beachTop - ((ph + h * 0.33) % h) - 6, 2, 6);
+      ctx.fillRect(lx - 1, beachTop - ((ph + h * 0.66) % h) - 6, 2, 6);
     }
   }
 
