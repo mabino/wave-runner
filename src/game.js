@@ -44,6 +44,8 @@ const DEFAULTS = {
 
   walkSpeed: 16,            // units/sec on sand
   swimSpeed: 10,            // units/sec in water
+  runSpeedFactor: 1.6,      // hold-to-run / sprint-swim multiplier
+  runHpPerSec: 1.5,         // running is tiring, but never drops below 1 HP
   washStunSec: 2,           // tumble time after a wipeout
   restRegenPerSec: 2.5,     // umbrella HP regen
 
@@ -166,6 +168,9 @@ class WaveRunnerGame {
       powerupsCollected: 0,
       damageTaken: 0,
       state: 'idle',                 // idle | resting | washed | out
+      facing: 'down',                // last direction of travel: up|down|left|right
+      moving: false,
+      running: false,
       action: null,                  // { type, startedAt, until }
       cooldownUntil: 0,
       target: null,
@@ -235,7 +240,7 @@ class WaveRunnerGame {
 
   // ─── Input handlers (called by the server on socket events) ───────────────
 
-  handleMove(id, x, y) {
+  handleMove(id, x, y, run) {
     const p = this.players[id];
     if (!p || p.state === 'out' || p.state === 'washed' || this.phase !== 'running') return;
     if (p.state === 'resting') p.state = 'idle';   // stand up and walk
@@ -245,11 +250,12 @@ class WaveRunnerGame {
     p.target = {
       x: Math.max(2, Math.min(98, Number(x) || 0)),
       y: Math.max(8, Math.min(92, Number(y) || 0)),
+      run: !!run,
     };
   }
 
   // Continuous movement (desktop WASD/arrows): a held direction vector.
-  handleSteer(id, dx, dy) {
+  handleSteer(id, dx, dy, run) {
     const p = this.players[id];
     if (!p || p.state === 'out' || p.state === 'washed' || this.phase !== 'running') return;
     const vx = Number(dx) || 0;
@@ -260,7 +266,7 @@ class WaveRunnerGame {
     p.pendingRest = false;
     p.pendingPickup = null;
     p.target = null;
-    p.steer = { x: vx / mag, y: vy / mag };
+    p.steer = { x: vx / mag, y: vy / mag, run: !!run };
   }
 
   handleAction(id, type) {
@@ -534,6 +540,8 @@ class WaveRunnerGame {
   _movePlayers(dt) {
     const waterline = this.waterline();
     for (const p of Object.values(this.players)) {
+      p.moving = false;
+      p.running = false;
       if (p.state === 'out') continue;
 
       if (p.state === 'washed') {
@@ -553,8 +561,12 @@ class WaveRunnerGame {
       // Buried players stay put until they surface.
       if (this._actionActive(p, 'dig')) continue;
 
+      const wasX = p.x;
+      const wasY = p.y;
+      const wantsRun = !!(p.steer ? p.steer.run : p.target && p.target.run);
       const speed = (p.y < waterline ? this.cfg.swimSpeed : this.cfg.walkSpeed)
-        * (p.npc ? p.npc.pace : 1);
+        * (p.npc ? p.npc.pace : 1)
+        * (wantsRun ? this.cfg.runSpeedFactor : 1);
 
       if (p.steer) {
         p.x = Math.max(2, Math.min(98, p.x + p.steer.x * speed * dt));
@@ -573,6 +585,22 @@ class WaveRunnerGame {
         } else {
           p.x += ((p.target.x - p.x) / d) * step;
           p.y += ((p.target.y - p.y) / d) * step;
+        }
+      }
+
+      // Orientation & animation flags come from actual displacement, so a
+      // player pinned against the world edge stops "walking" in place.
+      const mdx = p.x - wasX;
+      const mdy = p.y - wasY;
+      if (mdx || mdy) {
+        p.moving = true;
+        p.facing = Math.abs(mdx) >= Math.abs(mdy)
+          ? (mdx > 0 ? 'right' : 'left')
+          : (mdy > 0 ? 'down' : 'up');
+        if (wantsRun) {
+          p.running = true;
+          // Sprinting burns HP, but like diving it can never knock you out.
+          p.hp = Math.max(1, p.hp - this.cfg.runHpPerSec * dt);
         }
       }
 
@@ -946,6 +974,9 @@ class WaveRunnerGame {
         score: Math.round(p.score),
         streak: p.streak,
         state: p.state,
+        facing: p.facing,
+        moving: !!p.moving,
+        running: !!p.running,
         action: p.action && this.t <= p.action.until ? p.action.type : null,
         buffs: {
           bodysuit: Math.max(0, Math.round((p.buffs.bodysuit - this.t) * 10) / 10),

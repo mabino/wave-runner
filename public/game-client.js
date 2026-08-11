@@ -359,13 +359,28 @@
     ctx.fillText(icon, x, y + bob + 1);
   }
 
+  // Deterministic per-player phase so a crowd doesn't march in lockstep.
+  function walkPhase(id) {
+    let h = 0;
+    for (let i = 0; i < id.length; i++) h = (h + id.charCodeAt(i)) % 97;
+    return h;
+  }
+
   function drawPlayer(p, beachTop) {
-    const sprite = window.Sprites.spriteCanvas(p.avatar.archetype, p.avatar.skin, p.avatar.outfit);
+    const inWater = p.y < (snap ? snap.flags.beachY : 66);
+    const facing = p.facing || 'down';
+    // Feet animate on land; in the water the legs are submerged anyway.
+    const cycleMs = p.running ? 130 : 250;
+    const stepFrame = p.moving && !inWater
+      ? 1 + ((Math.floor(performance.now() / cycleMs) + walkPhase(p.id)) % 2)
+      : 0;
+    const sprite = window.Sprites.spriteCanvas(
+      p.avatar.archetype, p.avatar.skin, p.avatar.outfit, facing, stepFrame);
     const scale = Math.max(2.4, Math.min(3.4, W / 150));
     const w = window.Sprites.SPRITE_W * scale;
     const h = window.Sprites.SPRITE_H * scale;
     const x = sx(p.x), y = sy(p.y);
-    const inWater = p.y < (snap ? snap.flags.beachY : 66);
+    const bob = stepFrame === 1 ? -scale * 0.6 : 0;
 
     ctx.save();
     ctx.imageSmoothingEnabled = false;
@@ -419,7 +434,23 @@
       ctx.beginPath();
       ctx.ellipse(x, y + h * 0.27, w * 0.42, 4, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.drawImage(sprite, x - w / 2, y - h * 0.75, w, h);
+      // Sprinters kick up little puffs of sand behind them.
+      if (p.running) {
+        const back = { left: [1, 0], right: [-1, 0], up: [0, 1], down: [0, -1] }[facing];
+        const t = performance.now() / 1000;
+        ctx.fillStyle = SAND_WET;
+        for (let i = 0; i < 2; i++) {
+          const ph = (t * 3 + i * 0.5) % 1;
+          ctx.globalAlpha = (1 - ph) * 0.55;
+          ctx.beginPath();
+          ctx.arc(x + back[0] * (w * 0.35 + ph * 12),
+                  y + h * 0.22 + back[1] * (4 + ph * 10),
+                  2 + ph * 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = p.state === 'out' ? 0.35 : 1;
+      }
+      ctx.drawImage(sprite, x - w / 2, y - h * 0.75 + bob, w, h);
       if (p.state === 'resting') drawUmbrella(x + w * 0.55, y + 6, '#0aa5a0');
     }
 

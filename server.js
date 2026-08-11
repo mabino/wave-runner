@@ -151,14 +151,14 @@ io.on('connection', (socket) => {
     startLoop(room);
   });
 
-  socket.on('game:move', ({ x, y } = {}) => {
+  socket.on('game:move', ({ x, y, run } = {}) => {
     const room = roomManager.getRoomByPlayer(socket.id);
-    room?.game?.handleMove(socket.id, x, y);
+    room?.game?.handleMove(socket.id, x, y, run);
   });
 
-  socket.on('game:steer', ({ dx, dy } = {}) => {
+  socket.on('game:steer', ({ dx, dy, run } = {}) => {
     const room = roomManager.getRoomByPlayer(socket.id);
-    room?.game?.handleSteer(socket.id, dx, dy);
+    room?.game?.handleSteer(socket.id, dx, dy, run);
   });
 
   socket.on('game:action', ({ type } = {}) => {

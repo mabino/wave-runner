@@ -262,7 +262,12 @@
     state.lastHp = me.hp;
   }
 
-  // Touch / click on the scene: grab a power-up or wade to the spot.
+  // Touch / click on the scene: grab a power-up, tap to walk to the spot —
+  // or keep holding to break into a run (faster, but it burns a little HP).
+  // While held, dragging retargets the run.
+  const HOLD_RUN_MS = 300;
+  let hold = null;   // { id, x, y, timer, running, lastSent }
+
   $('game-canvas').addEventListener('pointerdown', (e) => {
     if (!state.playing) return;
     e.preventDefault();
@@ -273,7 +278,34 @@
     }
     const { x, y } = GameRenderer.screenToWorld(e.clientX, e.clientY);
     socket.emit('game:move', { x, y });
+    hold = {
+      id: e.pointerId, x, y, running: false, lastSent: 0,
+      timer: setTimeout(() => {
+        if (!hold) return;
+        hold.running = true;
+        socket.emit('game:move', { x: hold.x, y: hold.y, run: true });
+      }, HOLD_RUN_MS),
+    };
   });
+
+  $('game-canvas').addEventListener('pointermove', (e) => {
+    if (!hold || e.pointerId !== hold.id || !state.playing) return;
+    const { x, y } = GameRenderer.screenToWorld(e.clientX, e.clientY);
+    hold.x = x;
+    hold.y = y;
+    if (hold.running && performance.now() - hold.lastSent > 100) {
+      hold.lastSent = performance.now();
+      socket.emit('game:move', { x, y, run: true });
+    }
+  });
+
+  const endHold = (e) => {
+    if (!hold || e.pointerId !== hold.id) return;
+    clearTimeout(hold.timer);
+    hold = null;
+  };
+  $('game-canvas').addEventListener('pointerup', endHold);
+  $('game-canvas').addEventListener('pointercancel', endHold);
 
   function bindAction(btnId, type, sfx) {
     $(btnId).addEventListener('pointerdown', (e) => {
@@ -309,24 +341,37 @@
     ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
   };
   const heldKeys = new Set();
+  let shiftHeld = false;   // Shift + WASD/arrows = sprint
 
   function sendSteer() {
     let dx = 0, dy = 0;
     for (const k of heldKeys) { dx += KEYMAP[k][0]; dy += KEYMAP[k][1]; }
-    socket.emit('game:steer', { dx, dy });
+    socket.emit('game:steer', { dx, dy, run: shiftHeld });
   }
 
   window.addEventListener('keydown', (e) => {
-    if (!state.playing || !KEYMAP[e.code] || e.repeat) return;
+    if (!state.playing) return;
+    if (e.key === 'Shift' && !shiftHeld) {
+      shiftHeld = true;
+      if (heldKeys.size) sendSteer();
+      return;
+    }
+    if (!KEYMAP[e.code] || e.repeat) return;
     e.preventDefault();
     heldKeys.add(e.code);
     sendSteer();
   });
   window.addEventListener('keyup', (e) => {
+    if (e.key === 'Shift') {
+      shiftHeld = false;
+      if (heldKeys.size && state.playing) sendSteer();
+      return;
+    }
     if (!KEYMAP[e.code]) return;
     if (heldKeys.delete(e.code) && state.playing) { e.preventDefault(); sendSteer(); }
   });
   window.addEventListener('blur', () => {
+    shiftHeld = false;
     if (heldKeys.size) {
       heldKeys.clear();
       if (state.playing) socket.emit('game:steer', { dx: 0, dy: 0 });

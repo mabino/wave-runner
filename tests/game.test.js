@@ -714,7 +714,7 @@ describe('keyboard steering', () => {
     game.handleSteer('p1', 1, 0);
     expect(p.state).toBe('idle');
     expect(p.target).toBeNull();
-    expect(p.steer).toEqual({ x: 1, y: 0 });
+    expect(p.steer).toEqual({ x: 1, y: 0, run: false });
   });
 
   test('washed players cannot steer', () => {
@@ -1004,5 +1004,100 @@ describe('the beach day', () => {
     expect(snap.forecast.now).toBeDefined();
     expect(snap.flags).toMatchObject({ minX: 20, maxX: 80 });
     expect(snap.clockHour).toBeGreaterThanOrEqual(9);
+  });
+});
+
+describe('facing, walking and running', () => {
+  test('players face the way they move, and facing persists at rest', () => {
+    const game = makeGame();
+    game.addPlayer('p1', 'Strider');
+    let me = game.snapshot().players[0];
+    expect(me.facing).toBe('down');
+    expect(me.moving).toBe(false);
+    expect(me.running).toBe(false);
+
+    game.handleSteer('p1', -1, 0);
+    run(game, 0.3);
+    expect(game.snapshot().players[0].facing).toBe('left');
+    expect(game.snapshot().players[0].moving).toBe(true);
+
+    game.handleSteer('p1', 0, -1);
+    run(game, 0.3);
+    expect(game.snapshot().players[0].facing).toBe('up');
+
+    game.handleSteer('p1', 0, 0);   // keys released
+    run(game, 0.2);
+    me = game.snapshot().players[0];
+    expect(me.moving).toBe(false);
+    expect(me.facing).toBe('up');   // still looking where they last went
+  });
+
+  test('a held tap runs to the target faster than a walk', () => {
+    const game = makeGame();
+    const w = addSwimmer(game, 'walker', 80, 10);
+    const r = addSwimmer(game, 'runner', 80, 10);
+    game.handleMove('walker', 90, 80);
+    game.handleMove('runner', 90, 80, true);
+    run(game, 1);
+    expect(w.x).toBeCloseTo(10 + game.cfg.walkSpeed, 0);
+    expect(r.x).toBeCloseTo(10 + game.cfg.walkSpeed * game.cfg.runSpeedFactor, 0);
+    const snap = game.snapshot();
+    expect(snap.players.find(p => p.id === 'runner').running).toBe(true);
+    expect(snap.players.find(p => p.id === 'walker').running).toBe(false);
+  });
+
+  test('running drains a little HP; walking is free', () => {
+    const game = makeGame();
+    const w = addSwimmer(game, 'walker', 80, 10);
+    const r = addSwimmer(game, 'runner', 80, 10);
+    game.handleMove('walker', 90, 80);
+    game.handleMove('runner', 90, 80, true);
+    run(game, 2);
+    expect(w.hp).toBe(100);
+    expect(r.hp).toBeCloseTo(100 - game.cfg.runHpPerSec * 2, 0);
+  });
+
+  test('running can never knock a player out', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 80, 10);
+    p.hp = 2;
+    game.handleMove('p1', 90, 80, true);
+    run(game, 4);
+    expect(p.hp).toBe(1);
+    expect(p.state).not.toBe('out');
+  });
+
+  test('sprinting with held keys honors the steer run flag', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 80, 30);
+    game.handleSteer('p1', 1, 0, true);
+    run(game, 1);
+    expect(p.x).toBeCloseTo(30 + game.cfg.walkSpeed * game.cfg.runSpeedFactor, 0);
+    expect(game.snapshot().players[0].running).toBe(true);
+    expect(p.hp).toBeLessThan(100);
+  });
+
+  test('arriving at a run target ends the sprint and the drain', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 80, 50);
+    game.handleMove('p1', 60, 80, true);
+    run(game, 1);   // 10 units at run speed — long since arrived
+    const me = game.snapshot().players[0];
+    expect(me.running).toBe(false);
+    expect(me.moving).toBe(false);
+    const hpAfter = p.hp;
+    run(game, 1);
+    expect(p.hp).toBe(hpAfter);
+  });
+
+  test('NPCs never run', () => {
+    const game = makeGame({}, () => 0.2);
+    game.hours = game.hours.map(() => 'sunny');
+    addSwimmer(game, 'human', 40, 50);
+    game.addNpcs(3);
+    run(game, 5);
+    for (const p of game.snapshot().players) {
+      if (p.npc) expect(p.running).toBe(false);
+    }
   });
 });

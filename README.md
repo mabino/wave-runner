@@ -4,14 +4,20 @@ A 2D top-down multiplayer browser game: beachgoers survive as many waves as
 they can before the end of the day. Ocean at the top of the screen, sand on
 the lower third, lifeguards on patrol, weather rolling in.
 
-Playable on iPhone/iPad Safari in portrait or landscape (tap to move) and
-on desktop (tap or WASD/arrow keys). Served at `binolabs.com/waves/`.
+Playable on iPhone/iPad Safari in portrait or landscape (tap to walk,
+hold to run) and on desktop (tap, or WASD/arrow keys with Shift to
+sprint). Served at `binolabs.com/waves/`.
 
 ## How it plays
 
 - **Lobby**: Bino Bee-style room codes — create a beach, share the 6-letter
   code, up to 8 players. Pick a 16-bit beachgoer caricature (8 archetypes ×
-  4 skin tones × 6 suit colors).
+  4 skin tones × 6 suit colors). Avatars face the way they move (you see
+  their back heading out to sea, a profile crossing the beach) and animate
+  a two-step walk cycle.
+- **Running**: tap-and-hold a spot (drag to retarget) or hold Shift with
+  WASD/arrows to run — 1.6× speed, kicking up sand, at a slow HP burn
+  that can tire you down to 1 HP but never eliminate you. NPCs never run.
 - **Waves** roll in from the top with subtle visual tells (foam height, face
   shadow): ripples are safe standing, rollers need a timed **jump** or
   **dive**, thumpers demand a **dive**. Mistime it and you're washed up on

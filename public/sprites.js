@@ -17,6 +17,7 @@
       name: 'Surfer Dude',
       hair: '#e8c26a',
       accent: '#7a4b2a',   // puka shells
+      headEnd: 5,
       rows: [
         '....HHHH....',
         '...HHHHHH...',
@@ -40,6 +41,7 @@
       name: 'Boogie Kid',
       hair: '#3b2a1a',
       accent: '#ffd97b',   // backwards cap
+      headEnd: 6,
       rows: [
         '............',
         '....AAAA....',
@@ -63,6 +65,7 @@
       name: 'Beach Granny',
       hair: '#e6e6e6',
       accent: '#ffffff',   // flower print
+      headEnd: 5,
       rows: [
         '....HHHH....',
         '...HHHHHH...',
@@ -86,6 +89,7 @@
       name: 'Muscle Mike',
       hair: '#1c1c1c',
       accent: '#ffffff',   // tank stripe
+      headEnd: 4,
       rows: [
         '....HHHH....',
         '...HSSSSH...',
@@ -109,6 +113,7 @@
       name: 'Tourist Tim',
       hair: '#6b4a2a',
       accent: '#fff3c4',   // bucket hat + shirt flowers
+      headEnd: 5,
       rows: [
         '....AAAA....',
         '...AAAAAA...',
@@ -132,6 +137,7 @@
       name: 'Sun Seeker',
       hair: '#c2452d',
       accent: '#1c1c1c',   // big shades
+      headEnd: 5,
       rows: [
         '....HHHH....',
         '...HHHHHH...',
@@ -155,6 +161,7 @@
       name: 'Sandcastle Sam',
       hair: '#f2d16b',
       accent: '#e0403c',   // pail
+      headEnd: 6,
       rows: [
         '............',
         '....HHHH....',
@@ -178,6 +185,7 @@
       name: 'Salty Skipper',
       hair: '#ffffff',
       accent: '#123a63',   // captain's cap
+      headEnd: 7,
       rows: [
         '....AAAA....',
         '...AAAAAA...',
@@ -219,21 +227,88 @@
     };
   }
 
-  // Cache rendered sprites: one offscreen canvas per (archetype, skin, outfit).
+  // ── Facing & walk-frame variants ───────────────────────────────────────
+  // Every orientation is derived from the one front-facing map, so each new
+  // archetype stays a single-map job. headEnd marks the last head row.
+
+  // K pixels in the head zone are facial detail (eyes, shade lenses). Erase
+  // them into their surroundings; keepLast leaves the trailing one — the
+  // single visible eye of a profile view.
+  function eraseFace(row, keepLast) {
+    const chars = row.split('');
+    const ks = [];
+    for (let i = 0; i < chars.length; i++) if (chars[i] === 'K') ks.push(i);
+    const keep = keepLast ? ks[ks.length - 1] : -1;
+    for (const i of ks) {
+      if (i === keep) continue;
+      chars[i] = (chars[i - 1] && chars[i - 1] !== '.' && chars[i - 1] !== 'K')
+        ? chars[i - 1]
+        : (chars[i + 1] && chars[i + 1] !== '.' ? chars[i + 1] : 'H');
+    }
+    return chars.join('');
+  }
+
+  // Seen from behind: no face, and the head is hair (hats keep their color).
+  function backRows(arch) {
+    return arch.rows.map((row, y) =>
+      y > arch.headEnd ? row : eraseFace(row, false).replace(/S/g, 'H'));
+  }
+
+  // Right-facing profile: one leading eye, head nudged toward travel.
+  function sideRows(arch) {
+    return arch.rows.map((row, y) =>
+      y > arch.headEnd ? row : '.' + eraseFace(row, true).slice(0, -1));
+  }
+
+  const mirrorRows = (rows) => rows.map(r => r.split('').reverse().join(''));
+
+  function facingRows(arch, facing) {
+    if (facing === 'up') return backRows(arch);
+    if (facing === 'right') return sideRows(arch);
+    if (facing === 'left') return mirrorRows(sideRows(arch));
+    return arch.rows;
+  }
+
+  // Two-step walk cycle: lift alternating feet by blanking one of the two
+  // pixel runs in the bottom-most drawn row.
+  function walkFrameRows(rows, frame) {
+    if (!frame) return rows;
+    let bottom = rows.length - 1;
+    while (bottom >= 0 && !/[^.]/.test(rows[bottom])) bottom--;
+    if (bottom < 0) return rows;
+    const row = rows[bottom];
+    const runs = [];
+    for (let i = 0; i < row.length; i++) {
+      if (row[i] === '.') continue;
+      if (i === 0 || row[i - 1] === '.') runs.push([i, i]);
+      else runs[runs.length - 1][1] = i;
+    }
+    if (runs.length < 2) return rows;
+    const lift = frame === 1 ? runs[0] : runs[runs.length - 1];
+    const chars = row.split('');
+    for (let i = lift[0]; i <= lift[1]; i++) chars[i] = '.';
+    const out = rows.slice();
+    out[bottom] = chars.join('');
+    return out;
+  }
+
+  // Cache rendered sprites: one offscreen canvas per
+  // (archetype, skin, outfit, facing, frame).
   const cache = new Map();
 
-  function spriteCanvas(archetype, skinIdx, outfitIdx) {
-    const key = `${archetype}-${skinIdx}-${outfitIdx}`;
+  function spriteCanvas(archetype, skinIdx, outfitIdx, facing = 'down', frame = 0) {
+    const key = `${archetype}-${skinIdx}-${outfitIdx}-${facing}-${frame}`;
     if (cache.has(key)) return cache.get(key);
 
     const arch = ARCHETYPES[archetype] || ARCHETYPES[0];
     const pal = paletteFor(archetype, skinIdx, outfitIdx);
+    const rows = walkFrameRows(facingRows(arch, facing), frame);
 
     const base = document.createElement('canvas');
     base.width = BASE_W;
     base.height = BASE_H;
     const bctx = base.getContext('2d');
-    arch.rows.forEach((row, y) => {
+    rows.forEach((row, y) => {
       for (let x = 0; x < BASE_W; x++) {
         const c = pal[row[x]];
         if (!c) continue;
