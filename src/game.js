@@ -160,6 +160,8 @@ const WAVE_TYPES = {
 
 const WEATHER = ['sunny', 'cloudy', 'storm'];
 
+const round1 = (v) => Math.round(v * 10) / 10;
+
 // Optional computer-controlled beachgoers, in escalating order of menace.
 // aggression drives shoving and prey-stalking; skill drives wave reading;
 // pace scales movement speed — Pete darts, Bruiser lumbers.
@@ -333,39 +335,33 @@ class WaveRunnerGame {
   // ─── Input handlers (called by the server on socket events) ───────────────
 
   handleMove(id, x, y, run) {
-    const p = this.players[id];
-    if (!p || p.state === 'out' || p.state === 'washed' || p.inShop || this.phase !== 'running') return;
+    const p = this._actor(id);
+    if (!p) return;
     if (p.state === 'resting') p.state = 'idle';   // stand up and walk
-    p.pendingRest = false;
-    p.pendingPickup = null;
-    p.steer = null;
+    this._clearIntent(p);
     p.target = {
-      x: Math.max(2, Math.min(98, Number(x) || 0)),
-      y: Math.max(this.cfg.outerY - 14,
-        Math.min(this.cfg.boardwalkBottom - 5, Number(y) || 0)),
+      x: this._clampX(Number(x) || 0),
+      y: this._clampY(Number(y) || 0),
       run: !!run,
     };
   }
 
   // Continuous movement (desktop WASD/arrows): a held direction vector.
   handleSteer(id, dx, dy, run) {
-    const p = this.players[id];
-    if (!p || p.state === 'out' || p.state === 'washed' || p.inShop || this.phase !== 'running') return;
+    const p = this._actor(id);
+    if (!p) return;
     const vx = Number(dx) || 0;
     const vy = Number(dy) || 0;
     const mag = Math.hypot(vx, vy);
     if (!mag) { p.steer = null; return; }
     if (p.state === 'resting') p.state = 'idle';
-    p.pendingRest = false;
-    p.pendingPickup = null;
-    p.target = null;
+    this._clearIntent(p);
     p.steer = { x: vx / mag, y: vy / mag, run: !!run };
   }
 
   handleAction(id, type) {
-    const p = this.players[id];
-    if (!p || p.state === 'out' || p.state === 'washed' || p.state === 'resting' || p.inShop) return;
-    if (this.phase !== 'running') return;
+    const p = this._actor(id, { allowResting: false });
+    if (!p) return;
     if (type === 'stand') {
       // Standing is a real recovery move, not just the idle default: bailing
       // out of a jump/dive collapses most of the remaining cooldown so a
@@ -413,8 +409,7 @@ class WaveRunnerGame {
       if (!onSand) p.hp = Math.max(1, p.hp - this.cfg.diveHpCost);
       p.action = { type: 'vanish', startedAt: this.t, until: this.t + this.cfg.vanishDuration };
       p.cooldownUntil = p.action.until + this.cfg.actionCooldown;
-      p.target = null;
-      p.steer = null;
+      this._clearIntent(p);
       this._emit({ type: 'vanished', playerId: id });
       return;
     }
@@ -424,8 +419,7 @@ class WaveRunnerGame {
       // off shoves, crab pinches, and lightning. Free, but you can't move.
       p.action = { type: 'dig', startedAt: this.t, until: this.t + this.cfg.digDuration };
       p.cooldownUntil = p.action.until + this.cfg.actionCooldown;
-      p.target = null;
-      p.steer = null;
+      this._clearIntent(p);
       return;
     }
 
@@ -436,26 +430,23 @@ class WaveRunnerGame {
   }
 
   handleRest(id) {
-    const p = this.players[id];
-    if (!p || p.state === 'out' || p.state === 'washed' || p.inShop || this.phase !== 'running') return;
+    const p = this._actor(id);
+    if (!p) return;
     if (p.state === 'resting') { p.state = 'idle'; return; }
+    this._clearIntent(p);
     if (p.y >= this.waterline()) {
       p.state = 'resting';
-      p.target = null;
-      p.steer = null;
       p.action = null;
     } else {
       // Tapping the umbrella from the water: swim in, then settle.
       p.pendingRest = true;
-      p.pendingPickup = null;
-      p.steer = null;
       p.target = { x: Math.max(25, Math.min(75, p.x)), y: Math.min(90, this.waterline() + 10) };
     }
   }
 
   handleTapPowerup(id, powerupId) {
-    const p = this.players[id];
-    if (!p || p.state === 'out' || p.state === 'washed' || p.inShop || this.phase !== 'running') return;
+    const p = this._actor(id);
+    if (!p) return;
     const pu = this.powerups.find(u => u.id === powerupId);
     if (!pu) return;
     // Tapping never grabs at range: it marks the item and walks the player
@@ -504,12 +495,11 @@ class WaveRunnerGame {
   }
 
   handleShove(id) {
-    const p = this.players[id];
-    if (!p || p.state !== 'idle' || p.inShop || this.phase !== 'running') return;
+    const p = this._actor(id, { allowResting: false });
+    if (!p) return;
     if (this.t < p.shoveReadyAt) return;
     // No shoving from under the water or under the sand.
-    if (this._actionActive(p, 'dive') || this._actionActive(p, 'dig')
-        || this._actionActive(p, 'vanish')) return;
+    if (this._submerged(p)) return;
 
     const waterline = this.waterline();
     const reach = p.npc ? this.cfg.npcShoveRadius : this.cfg.shoveRadius;
@@ -522,8 +512,7 @@ class WaveRunnerGame {
     let best = reach;
     for (const q of this._alivePlayers()) {
       if (q.id === id || q.state === 'washed' || q.y >= waterline) continue;
-      if (this._actionActive(q, 'dive') || this._actionActive(q, 'dig')
-          || this._actionActive(q, 'vanish')) continue;
+      if (this._submerged(q)) continue;
       const d = this._dist(p, q);
       if (d <= best) { best = d; target = q; }
     }
@@ -556,20 +545,22 @@ class WaveRunnerGame {
 
     // Lunge to contact: close the gap for the shover so touch positioning
     // doesn't have to be pixel-perfect.
-    p.x = Math.max(2, Math.min(98, target.x + (p.x <= target.x ? -3 : 3)));
-    p.y = Math.max(this.cfg.outerY - 14, Math.min(92, target.y));
+    p.x = this._clampX(target.x + (p.x <= target.x ? -3 : 3));
+    p.y = this._clampY(target.y);
     p.target = null;
     p.pendingRest = false;
     p.pendingPickup = null;
 
     if (this.t < target.buffs.blanket) {
-      this._emit({ type: 'shove', shoverId: id, playerId: target.id, blocked: true });
+      this._emit({ type: 'shove', shoverId: id, playerId: target.id, blocked: true,
+        cooldown: this.cfg.shoveCooldown });
       return;
     }
 
     target.streak = 0;
     this._washAshore(target);
-    this._emit({ type: 'shove', shoverId: id, playerId: target.id, blocked: false });
+    this._emit({ type: 'shove', shoverId: id, playerId: target.id, blocked: false,
+      cooldown: this.cfg.shoveCooldown });
     this._applyDamage(target, this.cfg.shoveDamage, 'shove');
   }
 
@@ -614,6 +605,41 @@ class WaveRunnerGame {
     return this._drainEvents();
   }
 
+  // World-edge clamps — every mover goes through the same walls.
+  _clampX(v) { return Math.max(2, Math.min(98, v)); }
+  _clampY(v) {
+    return Math.max(this.cfg.outerY - 14, Math.min(this.cfg.boardwalkBottom - 5, v));
+  }
+
+  // Shared entry guard for beach inputs: returns the player if they can
+  // act right now, else null. Shoppers, the washed, and the eliminated
+  // never can; resting is opt-in per input.
+  _actor(id, { allowResting = true } = {}) {
+    const p = this.players[id];
+    if (!p || this.phase !== 'running') return null;
+    if (p.state === 'out' || p.state === 'washed' || p.inShop) return null;
+    if (!allowResting && p.state === 'resting') return null;
+    return p;
+  }
+
+  // Drop every queued intention: taps, held keys, pending errands.
+  _clearIntent(p) {
+    p.target = null;
+    p.steer = null;
+    p.pendingRest = false;
+    p.pendingPickup = null;
+  }
+
+  // Under the surface or under the sand — no shoving them, no shoving by them.
+  _submerged(p) {
+    return this._actionActive(p, 'dive') || this._actionActive(p, 'dig')
+      || this._actionActive(p, 'vanish');
+  }
+
+  // Clean off the playfield (deep search): waves, wildlife, lightning,
+  // rips, and lifeguards all look straight past them.
+  _offPlayfield(p) { return this._actionActive(p, 'vanish'); }
+
   _drainEvents() {
     const out = this.events;
     this.events = [];
@@ -637,11 +663,8 @@ class WaveRunnerGame {
     p.burrowCombo = 0;
     p.state = 'washed';
     p.washedUntil = this.t + this.cfg.washStunSec;
-    p.target = null;
-    p.steer = null;
     p.action = null;
-    p.pendingRest = false;
-    p.pendingPickup = null;
+    this._clearIntent(p);
   }
 
   _alivePlayers() {
@@ -705,7 +728,7 @@ class WaveRunnerGame {
       w.y += WAVE_TYPES[w.size].speed * speedFactor * dt;
       for (const p of this._alivePlayers()) {
         if (p.y >= waterline) continue;                // on the sand — safe
-        if (this._actionActive(p, 'vanish')) continue; // off the playfield
+        if (this._offPlayfield(p)) continue;
         if (w.resolved.has(p.id)) continue;
         if (this._waveFrontY(w, p.x) >= p.y - this.cfg.hitRange) {
           w.resolved.add(p.id);
@@ -815,7 +838,7 @@ class WaveRunnerGame {
       }
 
       // Buried and vanished players stay put until they surface.
-      if (this._actionActive(p, 'dig') || this._actionActive(p, 'vanish')) continue;
+      if (this._actionActive(p, 'dig') || this._offPlayfield(p)) continue;
 
       const wasX = p.x;
       const wasY = p.y;
@@ -828,9 +851,8 @@ class WaveRunnerGame {
         * (wantsRun ? this.cfg.runSpeedFactor : 1);
 
       if (p.steer) {
-        p.x = Math.max(2, Math.min(98, p.x + p.steer.x * speed * dt));
-        p.y = Math.max(this.cfg.outerY - 14,
-          Math.min(this.cfg.boardwalkBottom - 5, p.y + p.steer.y * speed * dt));
+        p.x = this._clampX(p.x + p.steer.x * speed * dt);
+        p.y = this._clampY(p.y + p.steer.y * speed * dt);
       } else if (p.target) {
         const d = this._dist(p, p.target);
         const step = speed * dt;
@@ -969,7 +991,7 @@ class WaveRunnerGame {
   _lifeguard(dt) {
     for (const p of this._alivePlayers()) {
       // Nobody can see a vanished player — the lifeguard included.
-      if (this._actionActive(p, 'vanish')) { p.outSince = null; p.whistled = false; continue; }
+      if (this._offPlayfield(p)) { p.outSince = null; p.whistled = false; continue; }
       const inWater = p.y < this.waterline();
       const outOfBounds = inWater &&
         (p.x < this.cfg.flagMinX || p.x > this.cfg.flagMaxX || p.y < this.cfg.outerY);
@@ -1016,7 +1038,7 @@ class WaveRunnerGame {
       const waterline = this.waterline();
       const swimmers = this._alivePlayers()
         .filter(p => p.y < waterline && !this._actionActive(p, 'dig')
-          && !this._actionActive(p, 'vanish'));
+          && !this._offPlayfield(p));
       let x, y;
       if (swimmers.length && this.rng() < 0.8) {
         const near = swimmers[Math.floor(this.rng() * swimmers.length)];
@@ -1042,7 +1064,7 @@ class WaveRunnerGame {
       const victims = this._alivePlayers().filter(p =>
         p.y < waterline
         && !this._actionActive(p, 'dig')
-        && !this._actionActive(p, 'vanish')
+        && !this._offPlayfield(p)
         && Math.hypot(p.x - x, p.y - y) <= this.cfg.lightningRadius);
       if (victims.length === 0) {
         this._emit({ type: 'lightning', playerId: null, x, y });
@@ -1089,7 +1111,7 @@ class WaveRunnerGame {
     const waterline = this.waterline();
     for (const p of this._alivePlayers()) {
       if (p.state === 'washed' || p.y >= waterline) continue;
-      if (this._actionActive(p, 'vanish')) continue;   // too deep for the rip
+      if (this._offPlayfield(p)) continue;             // too deep for the rip
       if (Math.abs(p.x - this.rip.x) > cfg.ripHalfWidth) continue;
       if (!this.rip.caught.has(p.id)) {
         this.rip.caught.add(p.id);
@@ -1100,7 +1122,7 @@ class WaveRunnerGame {
       // The channel runs clear to the top of the ocean: carried that far,
       // you're swept out to sea for good — unless the lifeguard gets
       // there first (see _rescues).
-      p.y = Math.max(cfg.outerY - 14, p.y - cfg.ripPull * strength * dt);
+      p.y = this._clampY(p.y - cfg.ripPull * strength * dt);
       this._applyDamage(p, cfg.ripHpPerSec * strength * dt, 'rip');
       if (p.state !== 'out' && p.y <= cfg.sweptAwayY) {
         this._emit({ type: 'swept-away', playerId: p.id });
@@ -1123,13 +1145,12 @@ class WaveRunnerGame {
       if (!p.inShop && p.state === 'idle' && !p.action
           && Math.hypot(p.x - cfg.shopX, p.y - cfg.shopY) <= cfg.shopDoorRadius) {
         p.inShop = true;
-        p.target = null;
-        p.steer = null;
+        this._clearIntent(p);
         this._emit({ type: 'shop-enter', playerId: p.id });
       }
 
       // Fishing: a soaking worm lures a bite after a while in the water.
-      if (p.bait > 0 && p.y < waterline && !this._actionActive(p, 'vanish')) {
+      if (p.bait > 0 && p.y < waterline && !this._offPlayfield(p)) {
         if (p.nextFishAt === null) {
           p.nextFishAt = this.t + this._rand(cfg.fishLureMin, cfg.fishLureMax);
         } else if (this.t >= p.nextFishAt) {
@@ -1353,7 +1374,7 @@ class WaveRunnerGame {
       }
 
       for (const p of this._alivePlayers()) {
-        if (p.state === 'washed' || this._actionActive(p, 'vanish')) continue;
+        if (p.state === 'washed' || this._offPlayfield(p)) continue;
         const inWater = p.y < waterline;
         const d = this._dist(p, h);
 
@@ -1457,7 +1478,7 @@ class WaveRunnerGame {
 
   snapshot() {
     return {
-      t: Math.round(this.t * 100) / 100,
+      t: round1(this.t * 100) / 100,
       clockHour: Math.round(this.clockHour() * 1000) / 1000,
       forecast: this.forecast(),
       phase: this.phase,
@@ -1466,38 +1487,43 @@ class WaveRunnerGame {
         minX: this.cfg.flagMinX,
         maxX: this.cfg.flagMaxX,
         deepY: this.cfg.deepY,
-        beachY: Math.round(this.waterline() * 10) / 10,   // the live sand line
+        beachY: Math.round(this.waterline()),   // the live sand line
         outerY: this.cfg.outerY,
         boardwalkY: this.cfg.boardwalkY,
         boardwalkBottom: this.cfg.boardwalkBottom,
         danger: this.surfDanger(),
       },
-      shop: { x: this.cfg.shopX, y: this.cfg.shopY },
+      shop: {
+        x: this.cfg.shopX,
+        y: this.cfg.shopY,
+        baitCost: this.cfg.baitCost,
+        fishSellPoints: this.cfg.fishSellPoints,
+      },
       lifeguards: this.lifeguards.map(g => ({
         id: g.id,
-        x: Math.round(g.x * 10) / 10,
-        y: Math.round(g.y * 10) / 10,
+        x: round1(g.x),
+        y: round1(g.y),
         phase: g.phase,
       })),
       strike: this.pendingStrike ? {
-        x: Math.round(this.pendingStrike.x * 10) / 10,
-        y: Math.round(this.pendingStrike.y * 10) / 10,
+        x: round1(this.pendingStrike.x),
+        y: round1(this.pendingStrike.y),
         progress: Math.min(1, Math.max(0,
           1 - (this.pendingStrike.at - this.t) / this.cfg.lightningTelegraphSec)),
       } : null,
       rip: this.rip ? {
-        x: Math.round(this.rip.x * 10) / 10,
+        x: round1(this.rip.x),
         halfW: this.cfg.ripHalfWidth,
-        strength: Math.round(this.ripStrength() * 100) / 100,
+        strength: round1(this.ripStrength() * 100) / 100,
       } : null,
       players: Object.values(this.players).map(p => ({
         id: p.id,
         name: p.name,
         npc: !!p.npc,
         avatar: p.avatar,
-        x: Math.round(p.x * 10) / 10,
-        y: Math.round(p.y * 10) / 10,
-        hp: Math.round(p.hp),
+        x: Math.round(p.x),
+        y: round1(p.y),
+        hp: round1(p.hp),
         score: Math.round(p.score),
         streak: p.streak,
         state: p.state,
@@ -1505,12 +1531,12 @@ class WaveRunnerGame {
         moving: !!p.moving,
         running: !!p.running,
         jumpCombo: p.jumpCombo,
-        runReadyIn: Math.max(0, Math.round((p.runReadyAt - this.t) * 10) / 10),
+        runReadyIn: Math.max(0, Math.round((p.runReadyAt - this.t))),
         action: p.action && this.t <= p.action.until ? p.action.type : null,
         buffs: {
-          bodysuit: Math.max(0, Math.round((p.buffs.bodysuit - this.t) * 10) / 10),
-          bodyboard: Math.max(0, Math.round((p.buffs.bodyboard - this.t) * 10) / 10),
-          blanket: Math.max(0, Math.round((p.buffs.blanket - this.t) * 10) / 10),
+          bodysuit: Math.max(0, round1((p.buffs.bodysuit - this.t))),
+          bodyboard: Math.max(0, round1((p.buffs.bodyboard - this.t))),
+          blanket: Math.max(0, round1((p.buffs.blanket - this.t))),
         },
         pail: !!p.pail,
         bait: p.bait,
@@ -1520,24 +1546,24 @@ class WaveRunnerGame {
       waves: this.waves.map(w => ({
         id: w.id,
         size: this._waveEffectiveSize(w),   // as it looks HERE, not at birth
-        y: Math.round(w.y * 10) / 10,
+        y: round1(w.y),
         slope: w.slope || 0,
         wobble: w.wobble,
         // 1 = full foam; ramps to 0 as a fading wave nears its endpoint.
         fade: w.endY ? Math.max(0, Math.min(1, (w.endY - w.y) / 12)) : 1,
       })),
-      powerups: this.powerups.map(u => ({ id: u.id, type: u.type, x: u.x, y: u.y, ttl: Math.round((u.expiresAt - this.t) * 10) / 10 })),
+      powerups: this.powerups.map(u => ({ id: u.id, type: u.type, x: u.x, y: u.y, ttl: round1((u.expiresAt - this.t)) })),
       // Deliberately no `sting` here: the client can never tell a salp from
       // a disguised jellyfish — that IS the gamble.
       salps: this.salps.map(s => ({
         id: s.id,
-        x: Math.round(s.x * 10) / 10,
-        y: Math.round(s.y * 10) / 10,
+        x: round1(s.x),
+        y: round1(s.y),
       })),
       hazards: this.hazards.map(h => ({
         id: h.id, kind: h.kind,
-        x: Math.round(h.x * 10) / 10,
-        y: Math.round(h.y * 10) / 10,
+        x: round1(h.x),
+        y: round1(h.y),
         vx: h.vx,
       })),
       gull: this.gullRaid ? {

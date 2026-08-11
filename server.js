@@ -115,6 +115,16 @@ function handlePlayerLeave(socketId) {
 io.on('connection', (socket) => {
   console.log(`[+] ${socket.id}`);
 
+  // Most in-game messages want the same thing: this socket's running game.
+  const gameOf = () => roomManager.getRoomByPlayer(socket.id)?.game;
+
+  // Starting a day and starting a rematch are the same launch sequence.
+  const launchGame = (room) => {
+    room.startGame(WaveRunnerGame);
+    io.to(room.code).emit('game:started', { config: room.config });
+    startLoop(room);
+  };
+
   socket.on('room:create', ({ playerName, avatar } = {}, cb) => {
     if (typeof cb !== 'function') return;
     if (!playerName?.trim()) return cb({ success: false, error: 'Name required' });
@@ -163,45 +173,19 @@ io.on('connection', (socket) => {
     if (room.hostId !== socket.id) return cb?.({ success: false, error: 'Host only' });
     if (room.phase === 'playing') return cb?.({ success: false, error: 'Game already started' });
 
-    room.startGame(WaveRunnerGame);
-    io.to(room.code).emit('game:started', { config: room.config });
+    launchGame(room);
     cb?.({ success: true });
-    startLoop(room);
   });
 
-  socket.on('game:move', ({ x, y, run } = {}) => {
-    const room = roomManager.getRoomByPlayer(socket.id);
-    room?.game?.handleMove(socket.id, x, y, run);
-  });
-
-  socket.on('game:steer', ({ dx, dy, run } = {}) => {
-    const room = roomManager.getRoomByPlayer(socket.id);
-    room?.game?.handleSteer(socket.id, dx, dy, run);
-  });
-
-  socket.on('game:action', ({ type } = {}) => {
-    const room = roomManager.getRoomByPlayer(socket.id);
-    room?.game?.handleAction(socket.id, type);
-  });
-
-  socket.on('game:shove', () => {
-    const room = roomManager.getRoomByPlayer(socket.id);
-    room?.game?.handleShove(socket.id);
-  });
-
-  socket.on('game:rest', () => {
-    const room = roomManager.getRoomByPlayer(socket.id);
-    room?.game?.handleRest(socket.id);
-  });
-
-  socket.on('game:tap-powerup', ({ id } = {}) => {
-    const room = roomManager.getRoomByPlayer(socket.id);
-    room?.game?.handleTapPowerup(socket.id, id);
-  });
+  socket.on('game:move', ({ x, y, run } = {}) => gameOf()?.handleMove(socket.id, x, y, run));
+  socket.on('game:steer', ({ dx, dy, run } = {}) => gameOf()?.handleSteer(socket.id, dx, dy, run));
+  socket.on('game:action', ({ type } = {}) => gameOf()?.handleAction(socket.id, type));
+  socket.on('game:shove', () => gameOf()?.handleShove(socket.id));
+  socket.on('game:rest', () => gameOf()?.handleRest(socket.id));
+  socket.on('game:tap-powerup', ({ id } = {}) => gameOf()?.handleTapPowerup(socket.id, id));
 
   socket.on('game:shop', ({ action } = {}, cb) => {
-    const room = roomManager.getRoomByPlayer(socket.id);
-    const result = room?.game?.handleShopAction(socket.id, action);
+    const result = gameOf()?.handleShopAction(socket.id, action);
     cb?.(result || { success: false, error: 'No game running' });
   });
 
@@ -212,9 +196,7 @@ io.on('connection', (socket) => {
     if (room.phase === 'playing') return cb?.({ success: false, error: 'Game in progress' });
     room.requestRematch(socket.id);
     if (room.allWantRematch()) {
-      room.startGame(WaveRunnerGame);
-      io.to(room.code).emit('game:started', { config: room.config });
-      startLoop(room);
+      launchGame(room);
     } else {
       io.to(room.code).emit('game:rematch-requested', {
         playerId: socket.id,

@@ -277,14 +277,18 @@
     const menu = $('shop-menu');
     menu.classList.toggle('hidden', !shopping);
     if (shopping) {
+      // Prices come from the server's snapshot — the menu can never drift
+      // from what the counter actually charges.
+      const baitCost = snap.shop?.baitCost ?? 10;
+      const fishPts = snap.shop?.fishSellPoints ?? 25;
       $('shop-ppts').textContent = `${me.score} ppts`;
       const buy = $('shop-buy');
-      buy.disabled = me.bait > 0 || me.score < 10;
-      buy.textContent = me.bait > 0 ? '🪱 Bait pouch is full' : '🪱 Buy bait — 10 ppts';
+      buy.disabled = me.bait > 0 || me.score < baitCost;
+      buy.textContent = me.bait > 0 ? '🪱 Bait pouch is full' : `🪱 Buy bait — ${baitCost} ppts`;
       const sell = $('shop-sell');
       sell.disabled = me.fish === 0;
       sell.textContent = me.fish > 0
-        ? `💰 Sell ${me.fish} fish — +${me.fish * 25} ppts`
+        ? `💰 Sell ${me.fish} fish — +${me.fish * fishPts} ppts`
         : '💰 No fish to sell';
     }
 
@@ -391,11 +395,12 @@
 
   // The cooldown only starts when a shove actually connects (or is
   // blanket-blocked) — a whiff costs nothing, so the button stays live.
-  function shoveCooldownUi() {
+  function shoveCooldownUi(seconds) {
     const btn = $('btn-shove');
     btn.disabled = true;
     btn.style.opacity = '.45';
-    setTimeout(() => { btn.disabled = false; btn.style.opacity = ''; }, 3000);
+    // The engine tells us its cooldown; never hard-code a second copy.
+    setTimeout(() => { btn.disabled = false; btn.style.opacity = ''; }, (seconds || 3) * 1000);
   }
   $('btn-rest').addEventListener('pointerdown', (e) => {
     e.preventDefault();
@@ -627,7 +632,7 @@
         break;
       }
       case 'shove': {
-        if (ev.shoverId === state.myId) shoveCooldownUi();
+        if (ev.shoverId === state.myId) shoveCooldownUi(ev.cooldown);
         if (ev.blocked) {
           if (ev.shoverId === state.myId) toast('🧺 Their beach blanket held firm!', 'warn');
           if (mine) toast('🧺 Your blanket blocked a shove!', 'warn');

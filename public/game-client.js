@@ -55,6 +55,8 @@
   let camY = 0;
 
   const sx = (x) => (x / 100) * W;
+  // On-map sprite scale; the shop interior uses its own roomier variant.
+  const spriteScale = () => Math.max(2.4, Math.min(3.4, W / 150));
   const sy = (y) => ((y - camY) / 100) * H;
 
   function screenToWorld(px, py) {
@@ -100,21 +102,17 @@
     return { a: last, b: last, f: 1 };
   }
 
-  function lerpedPlayers(br) {
-    if (!br || br.a === br.b) return (br ? br.b : snap).players;
-    const prev = new Map(br.a.players.map(p => [p.id, p]));
-    return br.b.players.map(p => {
-      const q = prev.get(p.id);
-      return q ? { ...p, x: lerp(q.x, p.x, br.f), y: lerp(q.y, p.y, br.f) } : p;
-    });
-  }
-
-  function lerpedWaves(br) {
-    if (!br || br.a === br.b) return (br ? br.b : snap).waves;
-    const prev = new Map(br.a.waves.map(w => [w.id, w]));
-    return br.b.waves.map(w => {
-      const q = prev.get(w.id);
-      return q ? { ...w, y: lerp(q.y, w.y, br.f) } : w;
+  // Interpolate any id-keyed entity list between the bracketing snapshots.
+  function lerpList(br, key, fields) {
+    const list = (br ? br.b : snap)[key] || [];
+    if (!br || br.a === br.b) return list;
+    const prev = new Map((br.a[key] || []).map(e => [e.id, e]));
+    return list.map(e => {
+      const q = prev.get(e.id);
+      if (!q) return e;
+      const out = { ...e };
+      for (const f of fields) out[f] = lerp(q[f], e[f], br.f);
+      return out;
     });
   }
 
@@ -221,7 +219,7 @@
   function drawShop(s) {
     const x = sx(s.x), y = sy(s.y);
     if (y < -110 || y > H + 110) return;
-    const scale = Math.max(2.4, Math.min(3.4, W / 150));
+    const scale = spriteScale();
     const doorH = window.Sprites.SPRITE_H * scale * 0.95;   // ~avatar height
     const doorW = window.Sprites.SPRITE_W * scale * 0.85;
     const bw = doorW * 4.6;                                 // building width
@@ -467,15 +465,6 @@
     ctx.fill();
   }
 
-  function lerpedHazards(br) {
-    if (!br || br.a === br.b) return ((br ? br.b : snap).hazards) || [];
-    const prev = new Map((br.a.hazards || []).map(h => [h.id, h]));
-    return (br.b.hazards || []).map(h => {
-      const q = prev.get(h.id);
-      return q ? { ...h, x: lerp(q.x, h.x, br.f), y: lerp(q.y, h.y, br.f) } : h;
-    });
-  }
-
   function drawHazard(h) {
     const x = sx(h.x), y = sy(h.y);
     const t = performance.now() / 1000;
@@ -508,14 +497,7 @@
       ctx.arc(x, y + bob, 8, Math.PI, 0);
       ctx.closePath();
       ctx.fill();
-      ctx.strokeStyle = 'rgba(255, 150, 190, .65)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      for (let i = -1; i <= 1; i++) {
-        ctx.moveTo(x + i * 4, y + bob + 1);
-        ctx.quadraticCurveTo(x + i * 4 + Math.sin(t * 3 + i) * 3, y + bob + 7, x + i * 4, y + bob + 12);
-      }
-      ctx.stroke();
+      drawTentacles(x, y, bob);
     } else if (h.kind === 'crab') {
       const scuttle = Math.sin(t * 9) * 2;
       ctx.font = '20px system-ui';
@@ -525,13 +507,11 @@
     }
   }
 
-  // A salp: the wiggly tentacles of a jellyfish with no cap in sight —
-  // drawn with the exact strokes of the jellyfish tentacles, because
-  // whether a cap lurks under the surface is the whole gamble.
-  function drawSalp(s) {
-    const x = sx(s.x), y = sy(s.y);
+  // The wiggly tentacles shared by jellyfish and salps — one function so
+  // they stay pixel-identical by construction: whether a cap lurks under
+  // the surface is the whole gamble.
+  function drawTentacles(x, y, bob) {
     const t = performance.now() / 1000;
-    const bob = Math.sin(t * 2.2 + s.x) * 2.5;
     ctx.strokeStyle = 'rgba(255, 150, 190, .65)';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -542,13 +522,10 @@
     ctx.stroke();
   }
 
-  function lerpedSalps(br) {
-    if (!br || br.a === br.b) return ((br ? br.b : snap).salps) || [];
-    const prev = new Map((br.a.salps || []).map(s => [s.id, s]));
-    return (br.b.salps || []).map(s => {
-      const q = prev.get(s.id);
-      return q ? { ...s, x: lerp(q.x, s.x, br.f), y: lerp(q.y, s.y, br.f) } : s;
-    });
+  // A salp: jellyfish tentacles with no cap in sight.
+  function drawSalp(s) {
+    const t = performance.now() / 1000;
+    drawTentacles(sx(s.x), sy(s.y), Math.sin(t * 2.2 + s.x) * 2.5);
   }
 
   function drawGull(g) {
@@ -598,7 +575,7 @@
   }
 
   function drawPlayer(p, beachTop) {
-    const inWater = p.y < (snap ? snap.flags.beachY : 66);
+    const inWater = p.y < snap.flags.beachY;
     const facing = p.facing || 'down';
     // Feet animate on land; in the water the legs are submerged anyway.
     // One smooth phase drives both the frame flip and a sinusoidal bob
@@ -609,7 +586,7 @@
     const stepFrame = walking ? (phase < 0.5 ? 1 : 2) : 0;
     const sprite = window.Sprites.spriteCanvas(
       p.avatar.archetype, p.avatar.skin, p.avatar.outfit, facing, stepFrame);
-    const scale = Math.max(2.4, Math.min(3.4, W / 150));
+    const scale = spriteScale();
     const w = window.Sprites.SPRITE_W * scale;
     const h = window.Sprites.SPRITE_H * scale;
     const x = sx(p.x), y = sy(p.y);
@@ -885,7 +862,7 @@
     if (snap.rip) drawRip(snap.rip, beachTop);
     drawBuoys(snap.flags.deepY, '#e0403c');
     if (snap.flags.outerY !== undefined) drawBuoys(snap.flags.outerY, '#ffffff');
-    for (const w of lerpedWaves(br)) drawWave(w, beachTop);
+    for (const w of lerpList(br, 'waves', ['y'])) drawWave(w, beachTop);
     if (snap.strike) drawStrikeWarning(snap.strike);
     drawBeach(beachTop);
     drawFlag(snap.flags.minX, beachTop, snap.flags.danger);
@@ -906,11 +883,11 @@
     for (const g of (snap.lifeguards || [])) drawRescueSwimmer(g);
 
     for (const u of snap.powerups) drawPowerup(u);
-    for (const s of lerpedSalps(br)) drawSalp(s);
-    for (const h of lerpedHazards(br)) drawHazard(h);
+    for (const s of lerpList(br, 'salps', ['x', 'y'])) drawSalp(s);
+    for (const h of lerpList(br, 'hazards', ['x', 'y'])) drawHazard(h);
     if (snap.gull) drawGull(snap.gull);
 
-    const players = lerpedPlayers(br).slice().sort((a, b) => a.y - b.y);
+    const players = lerpList(br, 'players', ['x', 'y']).slice().sort((a, b) => a.y - b.y);
     for (const p of players) drawPlayer(p, beachTop);
 
     if (snap.forecast.now === 'storm') drawRain();

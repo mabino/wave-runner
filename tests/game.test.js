@@ -4,15 +4,18 @@ const { WaveRunnerGame, DAY_END_HOUR } = require('../src/game');
 function makeGame(config = {}, rng = () => 0.5) {
   const game = new WaveRunnerGame(config, rng);
   // Quiet the environment by default so each test forces exactly the
-  // scenario it cares about.
-  game.nextWaveAt = Infinity;
-  game.nextPlaneAt = Infinity;
-  game.nextSharkAt = Infinity;
-  game.nextJellyAt = Infinity;
-  game.nextCrabAt = Infinity;
-  game.nextGullAt = Infinity;
-  game.nextSalpAt = Infinity;
-  game.nextRipAt = Infinity;
+  // scenario it cares about. Every scheduled spawner follows the
+  // `next<Thing>At` convention, so future ones are silenced automatically.
+  for (const key of Object.keys(game)) {
+    if (/^next\w+At$/.test(key) && typeof game[key] === 'number') game[key] = Infinity;
+  }
+  return game;
+}
+
+// All-storm skies on top of the quiet default.
+function stormGame() {
+  const game = makeGame();
+  game.hours = Array(game.hours.length).fill('storm');
   return game;
 }
 
@@ -323,12 +326,6 @@ describe('lifeguard', () => {
 });
 
 describe('weather and lightning', () => {
-  function stormGame() {
-    const game = makeGame();
-    game.hours = Array(game.hours.length).fill('storm');
-    return game;
-  }
-
   test('forecast exposes the current and next two hours', () => {
     const game = makeGame();
     game.hours = ['sunny', 'cloudy', 'storm', 'sunny', 'sunny', 'sunny', 'sunny', 'sunny', 'sunny', 'sunny'];
@@ -1249,12 +1246,6 @@ describe('surf danger flags', () => {
 });
 
 describe('telegraphed lightning', () => {
-  function stormGame() {
-    const game = makeGame();
-    game.hours = Array(game.hours.length).fill('storm');
-    return game;
-  }
-
   test('the strike spot glows before the bolt lands', () => {
     const game = stormGame();
     const p = addSwimmer(game);
