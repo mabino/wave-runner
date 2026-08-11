@@ -1,6 +1,7 @@
 const express = require('express');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
+const fs = require('fs');
 const path = require('path');
 
 const { RoomManager } = require('./src/rooms');
@@ -26,8 +27,20 @@ app.get('/socket.io/socket.io.js', (_req, res) => {
   res.sendFile(require.resolve('socket.io/client-dist/socket.io.js'));
 });
 
-// no-cache keeps the CDN edge from serving stale js/css after a deploy —
-// a fresh index.html referencing last week's app.js is how buttons die.
+// The CDN edge caches js/css by extension for hours and ignores origin
+// no-cache — a fresh index.html referencing last week's app.js is how
+// buttons die. Every asset URL therefore carries a version stamped at
+// boot: each deploy recreates the container, mints a new stamp, and the
+// new URLs sail past every stale edge copy.
+const ASSET_VERSION = Date.now().toString(36);
+const INDEX_HTML = fs
+  .readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8')
+  .replace(/\?v=\w+/g, `?v=${ASSET_VERSION}`);
+
+app.get(['/', '/index.html'], (_req, res) => {
+  res.set('Cache-Control', 'no-cache').type('html').send(INDEX_HTML);
+});
+
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: (res) => res.set('Cache-Control', 'no-cache'),
 }));
