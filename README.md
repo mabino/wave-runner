@@ -19,7 +19,10 @@ keyboard setup is detected). Served at `binolabs.com/waves/`.
   a two-step walk cycle.
 - **Running**: tap-and-hold a spot (drag to retarget) or hold Shift with
   WASD/arrows to run — 1.6× speed, kicking up sand, at a slow HP burn
-  that can tire you down to 1 HP but never eliminate you. NPCs never run.
+  that can tire you down to 1 HP but never eliminate you. A sprint lasts
+  about 2.5 s before you're winded (💨 in the HUD) and need a ~3 s
+  breather; keep holding and you'll surge again the moment it passes.
+  NPCs never run.
 - **Waves** roll in from the top with subtle visual tells (foam height, face
   shadow): ripples are safe standing, rollers need a timed **jump** or
   **dive**, thumpers demand a **dive**. Mistime it and you're washed up on

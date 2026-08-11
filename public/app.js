@@ -247,6 +247,7 @@
     if (me.buffs.bodysuit > 0) buffs.push(`🦺 ${Math.ceil(me.buffs.bodysuit)}s`);
     if (me.buffs.bodyboard > 0) buffs.push(`🛹 ${Math.ceil(me.buffs.bodyboard)}s`);
     if (me.buffs.blanket > 0) buffs.push(`🧺 ${Math.ceil(me.buffs.blanket)}s`);
+    if (me.runReadyIn > 0) buffs.push(`💨 ${Math.ceil(me.runReadyIn)}s`);
     $('hud-buffs').innerHTML = buffs.map(b => `<span class="buff-chip">${b}</span>`).join('');
 
     $('btn-rest').classList.toggle('on', me.state === 'resting');
@@ -279,10 +280,12 @@
     const { x, y } = GameRenderer.screenToWorld(e.clientX, e.clientY);
     socket.emit('game:move', { x, y });
     hold = {
-      id: e.pointerId, x, y, running: false, lastSent: 0,
+      id: e.pointerId, x, y, sentX: x, sentY: y, running: false, lastSent: 0,
       timer: setTimeout(() => {
         if (!hold) return;
         hold.running = true;
+        hold.sentX = hold.x;
+        hold.sentY = hold.y;
         socket.emit('game:move', { x: hold.x, y: hold.y, run: true });
       }, HOLD_RUN_MS),
     };
@@ -293,8 +296,14 @@
     const { x, y } = GameRenderer.screenToWorld(e.clientX, e.clientY);
     hold.x = x;
     hold.y = y;
-    if (hold.running && performance.now() - hold.lastSent > 100) {
+    // Dead zone: a stationary held finger jitters by a pixel or two, and
+    // re-sending the same target makes the runner stutter around it. Only
+    // retarget when the finger genuinely travels.
+    if (hold.running && performance.now() - hold.lastSent > 100
+        && Math.hypot(x - hold.sentX, y - hold.sentY) > 2.5) {
       hold.lastSent = performance.now();
+      hold.sentX = x;
+      hold.sentY = y;
       socket.emit('game:move', { x, y, run: true });
     }
   });
@@ -593,6 +602,9 @@
       }
       case 'shove-miss':
         if (mine) toast('🫸 No swimmer near you — wade closer first');
+        break;
+      case 'winded':
+        if (mine) toast('💨 Winded — catch your breath');
         break;
       case 'shark':
         Beach.sfx.sharkAlert();

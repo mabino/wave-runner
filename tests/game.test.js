@@ -1101,3 +1101,55 @@ describe('facing, walking and running', () => {
     }
   });
 });
+
+describe('running cooldown', () => {
+  test('a sprint winds the runner after runMaxSec and downgrades to a walk', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 80, 5);
+    game.handleSteer('p1', 1, 0, true);
+    run(game, 2);
+    expect(game.snapshot().players[0].running).toBe(true);
+
+    const events = run(game, 1);   // stamina runs out at 2.5s
+    expect(events.find(e => e.type === 'winded')).toBeTruthy();
+    const me = game.snapshot().players[0];
+    expect(me.running).toBe(false);
+    expect(me.moving).toBe(true);       // still going — just walking
+    expect(me.runReadyIn).toBeGreaterThan(0);
+  });
+
+  test('a sprint held through the breather surges again when stamina returns', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 80, 5);
+    game.handleSteer('p1', 1, 0, true);
+    run(game, 3);                        // sprint (2.5s) then winded
+    expect(game.snapshot().players[0].running).toBe(false);
+
+    game.handleSteer('p1', -1, 0, true); // turn around, still holding run
+    run(game, 2);                        // inside the ~3s breather
+    expect(game.snapshot().players[0].running).toBe(false);
+
+    run(game, 1.2);                      // breather over — off they go
+    expect(game.snapshot().players[0].running).toBe(true);
+  });
+
+  test('stopping a sprint voluntarily also starts the breather', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 80, 10);
+    game.handleSteer('p1', 1, 0, true);
+    run(game, 1);
+    game.handleSteer('p1', 0, 0);        // let go mid-sprint
+    run(game, 0.3);
+    expect(game.snapshot().players[0].runReadyIn).toBeGreaterThan(0);
+
+    game.handleSteer('p1', -1, 0, true); // try again right away
+    const before = p.x;
+    run(game, 1);
+    expect(game.snapshot().players[0].running).toBe(false);
+    expect(before - p.x).toBeCloseTo(game.cfg.walkSpeed, 0);   // walk pace only
+
+    game.handleSteer('p1', 1, 0, true);  // clear of the world edge, still held
+    run(game, 3);                        // breather expires while held
+    expect(game.snapshot().players[0].running).toBe(true);
+  });
+});

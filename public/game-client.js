@@ -12,10 +12,13 @@
   let W = 0, H = 0, dpr = 1;
   let running = false;
 
-  let snap = null;        // latest server snapshot
-  let prevSnap = null;
-  let snapTime = 0;       // performance.now() at latest snapshot
-  let prevTime = 0;
+  let snap = null;        // latest server snapshot (HUD/non-positional state)
+  const buffer = [];      // recent snapshots for time-aligned interpolation
+  let clockOffset = null; // estimated (server sim time − client clock)
+  // Render this far behind the freshest server state (~1.5 ticks at 8 Hz):
+  // uneven snapshot arrivals then land inside the delay window instead of
+  // freezing and jumping the avatars — most visible at run speed.
+  const RENDER_DELAY = 0.18;
   let myId = null;
 
   let flashUntil = 0;     // lightning flash
@@ -58,39 +61,55 @@
   }
 
   function setSnapshot(s, me) {
-    prevSnap = snap;
-    prevTime = snapTime;
-    snap = s;
-    snapTime = performance.now();
     myId = me;
+    // A rematch restarts sim time; drop the stale timeline.
+    if (snap && s.t < snap.t) { buffer.length = 0; clockOffset = null; }
+    snap = s;
+    buffer.push(s);
+    if (buffer.length > 24) buffer.shift();
+    // Map server sim time onto the client clock. Track the fastest arrivals
+    // (a late packet only means the network hiccuped) and drift down slowly.
+    const off = s.t - performance.now() / 1000;
+    clockOffset = clockOffset === null || off > clockOffset
+      ? off
+      : clockOffset * 0.98 + off * 0.02;
   }
 
-  // Interpolate an entity list keyed by id between the last two snapshots.
   function lerp(a, b, f) { return a + (b - a) * f; }
 
-  function lerpFactor() {
-    if (!prevSnap) return 1;
-    const span = Math.max(40, snapTime - prevTime);
-    return Math.min(1, (performance.now() - snapTime) / span);
+  // The pair of buffered snapshots straddling "now minus the render delay",
+  // and the blend factor between them.
+  function bracket() {
+    if (!buffer.length) return null;
+    const rt = performance.now() / 1000 + clockOffset - RENDER_DELAY;
+    if (rt <= buffer[0].t) return { a: buffer[0], b: buffer[0], f: 0 };
+    for (let i = buffer.length - 1; i >= 0; i--) {
+      if (buffer[i].t <= rt) {
+        const a = buffer[i];
+        const b = buffer[i + 1] || a;
+        const span = b.t - a.t;
+        return { a, b, f: span > 0 ? Math.min(1, (rt - a.t) / span) : 1 };
+      }
+    }
+    const last = buffer[buffer.length - 1];
+    return { a: last, b: last, f: 1 };
   }
 
-  function lerpedPlayers() {
-    const f = lerpFactor();
-    if (!prevSnap) return snap.players;
-    const prev = new Map(prevSnap.players.map(p => [p.id, p]));
-    return snap.players.map(p => {
+  function lerpedPlayers(br) {
+    if (!br || br.a === br.b) return (br ? br.b : snap).players;
+    const prev = new Map(br.a.players.map(p => [p.id, p]));
+    return br.b.players.map(p => {
       const q = prev.get(p.id);
-      return q ? { ...p, x: lerp(q.x, p.x, f), y: lerp(q.y, p.y, f) } : p;
+      return q ? { ...p, x: lerp(q.x, p.x, br.f), y: lerp(q.y, p.y, br.f) } : p;
     });
   }
 
-  function lerpedWaves() {
-    const f = lerpFactor();
-    if (!prevSnap) return snap.waves;
-    const prev = new Map(prevSnap.waves.map(w => [w.id, w]));
-    return snap.waves.map(w => {
+  function lerpedWaves(br) {
+    if (!br || br.a === br.b) return (br ? br.b : snap).waves;
+    const prev = new Map(br.a.waves.map(w => [w.id, w]));
+    return br.b.waves.map(w => {
       const q = prev.get(w.id);
-      return q ? { ...w, y: lerp(q.y, w.y, f) } : w;
+      return q ? { ...w, y: lerp(q.y, w.y, br.f) } : w;
     });
   }
 
@@ -261,13 +280,12 @@
     ctx.fillRect(x - 4, y - 41, 9, 6);
   }
 
-  function lerpedHazards() {
-    const f = lerpFactor();
-    if (!prevSnap || !prevSnap.hazards) return snap.hazards || [];
-    const prev = new Map(prevSnap.hazards.map(h => [h.id, h]));
-    return (snap.hazards || []).map(h => {
+  function lerpedHazards(br) {
+    if (!br || br.a === br.b) return ((br ? br.b : snap).hazards) || [];
+    const prev = new Map((br.a.hazards || []).map(h => [h.id, h]));
+    return (br.b.hazards || []).map(h => {
       const q = prev.get(h.id);
-      return q ? { ...h, x: lerp(q.x, h.x, f), y: lerp(q.y, h.y, f) } : h;
+      return q ? { ...h, x: lerp(q.x, h.x, br.f), y: lerp(q.y, h.y, br.f) } : h;
     });
   }
 
@@ -370,17 +388,19 @@
     const inWater = p.y < (snap ? snap.flags.beachY : 66);
     const facing = p.facing || 'down';
     // Feet animate on land; in the water the legs are submerged anyway.
-    const cycleMs = p.running ? 130 : 250;
-    const stepFrame = p.moving && !inWater
-      ? 1 + ((Math.floor(performance.now() / cycleMs) + walkPhase(p.id)) % 2)
-      : 0;
+    // One smooth phase drives both the frame flip and a sinusoidal bob
+    // (one bounce per footfall), so nothing pops between frames.
+    const cycleMs = p.running ? 320 : 500;    // full two-step cycle
+    const phase = (performance.now() / cycleMs + walkPhase(p.id) * 0.137) % 1;
+    const walking = p.moving && !inWater;
+    const stepFrame = walking ? (phase < 0.5 ? 1 : 2) : 0;
     const sprite = window.Sprites.spriteCanvas(
       p.avatar.archetype, p.avatar.skin, p.avatar.outfit, facing, stepFrame);
     const scale = Math.max(2.4, Math.min(3.4, W / 150));
     const w = window.Sprites.SPRITE_W * scale;
     const h = window.Sprites.SPRITE_H * scale;
     const x = sx(p.x), y = sy(p.y);
-    const bob = stepFrame === 1 ? -scale * 0.6 : 0;
+    const bob = walking ? -Math.abs(Math.sin(phase * Math.PI * 2)) * scale * 0.5 : 0;
 
     ctx.save();
     ctx.imageSmoothingEnabled = false;
@@ -532,9 +552,10 @@
     if (!snap || W === 0 || H === 0) return;
 
     const beachTop = sy(snap.flags.beachY);
+    const br = bracket();
     drawOcean(beachTop);
     drawBuoys(snap.flags.deepY);
-    for (const w of lerpedWaves()) drawWave(w, beachTop);
+    for (const w of lerpedWaves(br)) drawWave(w, beachTop);
     drawBeach(beachTop);
     drawFlag(snap.flags.minX, beachTop);
     drawFlag(snap.flags.maxX, beachTop);
@@ -547,10 +568,10 @@
     drawLifeguardTower(beachTop);
 
     for (const u of snap.powerups) drawPowerup(u);
-    for (const h of lerpedHazards()) drawHazard(h);
+    for (const h of lerpedHazards(br)) drawHazard(h);
     if (snap.gull) drawGull(snap.gull);
 
-    const players = lerpedPlayers().slice().sort((a, b) => a.y - b.y);
+    const players = lerpedPlayers(br).slice().sort((a, b) => a.y - b.y);
     for (const p of players) drawPlayer(p, beachTop);
 
     if (snap.forecast.now === 'storm') drawRain();

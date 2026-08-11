@@ -46,6 +46,8 @@ const DEFAULTS = {
   swimSpeed: 10,            // units/sec in water
   runSpeedFactor: 1.6,      // hold-to-run / sprint-swim multiplier
   runHpPerSec: 1.5,         // running is tiring, but never drops below 1 HP
+  runMaxSec: 2.5,           // continuous sprint budget before winding
+  runCooldownSec: 3,        // breather before the next sprint
   washStunSec: 2,           // tumble time after a wipeout
   restRegenPerSec: 2.5,     // umbrella HP regen
 
@@ -171,6 +173,8 @@ class WaveRunnerGame {
       facing: 'down',                // last direction of travel: up|down|left|right
       moving: false,
       running: false,
+      runStartedAt: null,            // sprint stamina bookkeeping
+      runReadyAt: 0,
       action: null,                  // { type, startedAt, until }
       cooldownUntil: 0,
       target: null,
@@ -540,6 +544,12 @@ class WaveRunnerGame {
   _movePlayers(dt) {
     const waterline = this.waterline();
     for (const p of Object.values(this.players)) {
+      // A sprint that stopped for any reason — released, arrived, washed,
+      // resting — starts the breather before the next one.
+      if (!p.running && p.runStartedAt !== null) {
+        p.runReadyAt = this.t + this.cfg.runCooldownSec;
+        p.runStartedAt = null;
+      }
       p.moving = false;
       p.running = false;
       if (p.state === 'out') continue;
@@ -563,7 +573,10 @@ class WaveRunnerGame {
 
       const wasX = p.x;
       const wasY = p.y;
-      const wantsRun = !!(p.steer ? p.steer.run : p.target && p.target.run);
+      // The run flag stays on the input, so a sprint held through the
+      // breather surges again the moment stamina returns.
+      const wantsRun = !!(p.steer ? p.steer.run : p.target && p.target.run)
+        && this.t >= p.runReadyAt;
       const speed = (p.y < waterline ? this.cfg.swimSpeed : this.cfg.walkSpeed)
         * (p.npc ? p.npc.pace : 1)
         * (wantsRun ? this.cfg.runSpeedFactor : 1);
@@ -599,8 +612,16 @@ class WaveRunnerGame {
           : (mdy > 0 ? 'down' : 'up');
         if (wantsRun) {
           p.running = true;
+          if (p.runStartedAt === null) p.runStartedAt = this.t;
           // Sprinting burns HP, but like diving it can never knock you out.
           p.hp = Math.max(1, p.hp - this.cfg.runHpPerSec * dt);
+          if (this.t - p.runStartedAt >= this.cfg.runMaxSec) {
+            // Winded: the sprint expires on its own and needs a breather.
+            p.running = false;
+            p.runStartedAt = null;
+            p.runReadyAt = this.t + this.cfg.runCooldownSec;
+            this._emit({ type: 'winded', playerId: p.id });
+          }
         }
       }
 
@@ -977,6 +998,7 @@ class WaveRunnerGame {
         facing: p.facing,
         moving: !!p.moving,
         running: !!p.running,
+        runReadyIn: Math.max(0, Math.round((p.runReadyAt - this.t) * 10) / 10),
         action: p.action && this.t <= p.action.until ? p.action.type : null,
         buffs: {
           bodysuit: Math.max(0, Math.round((p.buffs.bodysuit - this.t) * 10) / 10),
