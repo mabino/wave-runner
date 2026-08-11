@@ -197,17 +197,46 @@
   }
 
   function drawBeach(beachTop) {
-    ctx.fillStyle = SAND;
-    ctx.fillRect(0, beachTop, W, H - beachTop);
-    // Wet sand lip at the waterline.
-    ctx.fillStyle = SAND_WET;
-    ctx.fillRect(0, beachTop, W, 6);
-    // Sand speckle.
-    ctx.fillStyle = SAND_DARK;
-    for (let i = 0; i < 60; i++) {
-      const x = (i * 197) % W;
-      const y = beachTop + 10 + ((i * 89) % Math.max(1, H - beachTop - 14));
-      ctx.fillRect(x, y, 2, 2);
+    const bwTop = sy(snap.flags.boardwalkY ?? 100);
+    const sandBottom = Math.min(H, bwTop);
+    if (sandBottom > beachTop) {
+      ctx.fillStyle = SAND;
+      ctx.fillRect(0, beachTop, W, sandBottom - beachTop);
+      // Wet sand lip at the waterline.
+      ctx.fillStyle = SAND_WET;
+      ctx.fillRect(0, beachTop, W, 6);
+      // Sand speckle.
+      ctx.fillStyle = SAND_DARK;
+      for (let i = 0; i < 60; i++) {
+        const x = (i * 197) % W;
+        const y = beachTop + 10 + ((i * 89) % Math.max(1, sandBottom - beachTop - 14));
+        if (y < sandBottom) ctx.fillRect(x, y, 2, 2);
+      }
+    }
+    if (bwTop < H) drawBoardwalk(bwTop);
+  }
+
+  // The boardwalk behind the beach — just weathered planks for now.
+  function drawBoardwalk(top) {
+    ctx.fillStyle = '#9b7648';
+    ctx.fillRect(0, Math.max(0, top), W, H - Math.max(0, top));
+    ctx.fillStyle = '#7a5a34';
+    ctx.fillRect(0, top, W, 3);   // front edge
+    ctx.strokeStyle = 'rgba(60, 40, 20, .35)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let y = top + 12; y < H; y += 12) {
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+    }
+    ctx.stroke();
+    // Staggered plank joints.
+    ctx.fillStyle = 'rgba(60, 40, 20, .3)';
+    for (let row = 0; row * 12 + top + 12 < H + 12; row++) {
+      const y = top + 3 + row * 12;
+      for (let x = ((row % 2) * 45 + 20); x < W; x += 90) {
+        ctx.fillRect(x, y, 1.5, 12);
+      }
     }
   }
 
@@ -269,9 +298,8 @@
     ctx.fill();
   }
 
-  function drawLifeguardTower(beachTop) {
+  function drawLifeguardTower(y) {
     const x = W - 46;
-    const y = beachTop + Math.min(46, (H - beachTop) * 0.45);
     ctx.fillStyle = '#c94040';
     ctx.fillRect(x - 14, y - 34, 28, 20);
     ctx.fillStyle = '#fff';
@@ -287,6 +315,42 @@
     ctx.fillRect(x - 3, y - 46, 7, 6);
     ctx.fillStyle = '#e0403c';
     ctx.fillRect(x - 4, y - 41, 9, 6);
+  }
+
+  // A rescue swimmer powering through the surf: red cap, white wake, and
+  // the classic red torpedo float in tow.
+  function drawRescueSwimmer(g) {
+    const x = sx(g.x), y = sy(g.y);
+    if (y < -20 || y > H + 20) return;
+    const t = performance.now() / 1000;
+    // Kicked-up wake.
+    ctx.strokeStyle = 'rgba(255,255,255,.55)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x - 6, y + 4 + Math.sin(t * 8) * 1.5);
+    ctx.lineTo(x - 16, y + 5);
+    ctx.stroke();
+    // Torpedo float.
+    ctx.fillStyle = '#e0403c';
+    ctx.beginPath();
+    ctx.ellipse(x + 7, y + 3, 6, 2.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Arms mid-stroke.
+    ctx.strokeStyle = '#e8b184';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(x - 3, y + 1);
+    ctx.lineTo(x - 3 + Math.sin(t * 9) * 5, y - 3);
+    ctx.stroke();
+    // Head with the red cap.
+    ctx.fillStyle = '#e8b184';
+    ctx.beginPath();
+    ctx.arc(x, y, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#e0403c';
+    ctx.beginPath();
+    ctx.arc(x, y - 0.8, 3.2, Math.PI, 0);
+    ctx.fill();
   }
 
   function lerpedHazards(br) {
@@ -675,11 +739,15 @@
     if (canvas.clientWidth !== W || canvas.clientHeight !== H) resize();
     if (!snap || W === 0 || H === 0) return;
 
-    // Camera follows me out to sea; eases home when I swim back.
+    // Camera follows me out to sea — or back to the boardwalk — and eases
+    // home to the classic view in between.
     const meNow = snap.players.find(p => p.id === myId);
-    const camTarget = meNow
-      ? Math.max((snap.flags.outerY ?? 0) - 4, Math.min(0, meNow.y - 32))
-      : 0;
+    let camTarget = 0;
+    if (meNow) {
+      const maxCam = (snap.flags.boardwalkBottom ?? 100) - 100;
+      if (meNow.y < 32) camTarget = Math.max((snap.flags.outerY ?? 0) - 4, meNow.y - 32);
+      else if (meNow.y > 88) camTarget = Math.min(maxCam, meNow.y - 88);
+    }
     camY += (camTarget - camY) * 0.08;
     if (Math.abs(camY - camTarget) < 0.05) camY = camTarget;
 
@@ -695,12 +763,18 @@
     drawFlag(snap.flags.minX, beachTop, snap.flags.danger);
     drawFlag(snap.flags.maxX, beachTop, snap.flags.danger);
 
-    // Decorative umbrellas along the back of the beach.
-    const backY = Math.min(H - 12, beachTop + (H - beachTop) * 0.72);
-    drawUmbrella(W * 0.16, backY, '#e0403c');
-    drawUmbrella(W * 0.5, backY, '#ffd97b');
-    drawUmbrella(W * 0.84, backY, '#1e6ee0');
-    drawLifeguardTower(beachTop);
+    // Decorative umbrellas and the tower are anchored to the sand itself —
+    // they scroll away with the beach instead of tagging along with the view.
+    const bwY = snap.flags.boardwalkY ?? 100;
+    const backY = sy(snap.flags.beachY + (bwY - snap.flags.beachY) * 0.72);
+    if (backY > -40 && backY < H + 40) {
+      drawUmbrella(W * 0.16, backY, '#e0403c');
+      drawUmbrella(W * 0.5, backY, '#ffd97b');
+      drawUmbrella(W * 0.84, backY, '#1e6ee0');
+    }
+    const towerY = sy(snap.flags.beachY + (bwY - snap.flags.beachY) * 0.45);
+    if (towerY > -60 && towerY < H + 60) drawLifeguardTower(towerY);
+    for (const g of (snap.lifeguards || [])) drawRescueSwimmer(g);
 
     for (const u of snap.powerups) drawPowerup(u);
     for (const s of lerpedSalps(br)) drawSalp(s);

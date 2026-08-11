@@ -66,8 +66,14 @@ keyboard setup is detected). Served at `binolabs.com/waves/`.
 - **Rip currents** build up, hold, and die back down: a subtly darker
   channel of outbound foam that drags anyone in it further and further
   out to sea while draining HP fast. Swim **parallel to the beach** to
-  escape (or sprint hard shoreward); anyone dragged past the buoys gets
-  a lifeguard rescue and an extended cooldown on the sand.
+  escape (or sprint hard shoreward). The channel runs clear to the top
+  of the ocean: anyone dragged past the buoys gets a **rescue swimmer**
+  launched after them — red cap, torpedo float — who races the current
+  and hauls the caught back to the sand for an extended cooldown. If
+  the rip carries you to the top before the lifeguard arrives, you're
+  **swept out to sea** and your beach day is over.
+- **The boardwalk**: scroll down past the back of the beach and walk up
+  onto the planks (empty for now — no digging through them).
 - Scores are **Pleasant Points (ppts)** — waves, streaks, perfect reads,
   dive premiums, and scooped salps all pay into the same tally.
 - **Umbrella** (⛱️ button): stretch out in the shade beneath your umbrella

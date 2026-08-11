@@ -20,6 +20,8 @@ const DEFAULTS = {
   beachY: 66,               // mean waterline; y >= waterline() is sand
   deepY: 22,                // buoy line: wildlife and drops stay shoreward of it
   outerY: -78,              // the true swim limit, a full screen beyond the buoys
+  boardwalkY: 100,          // planks start here, behind the sand
+  boardwalkBottom: 150,     // ...and end here (empty for now)
   flagMinX: 20,             // swim between the flags
   flagMaxX: 80,
 
@@ -96,6 +98,12 @@ const DEFAULTS = {
   ripDurMin: 18,    ripDurMax: 28,
   ripHalfWidth: 6,  ripPull: 12,   ripHpPerSec: 4,
   ripFadeSec: 3,    // rips build up and die down, not on/off
+  sweptAwayY: -88,  // carried this far by a rip = swept out to sea, gone
+
+  // Rescue swimmers: when a rip drags someone past the buoy line, a
+  // lifeguard launches from the tower and races the current for them.
+  rescueSpeed: 26,
+  towerX: 88,
 
   planeMinGap: 22,          // seconds between banner-plane passes
   planeMaxGap: 40,
@@ -177,6 +185,7 @@ class WaveRunnerGame {
     this.pendingStrike = null;        // telegraphed lightning: {x, y, at}
     this.rip = null;                  // active rip current: {x, until, caught}
     this.nextRipAt = this._rand(this.cfg.ripMinGap, this.cfg.ripMaxGap);
+    this.lifeguards = [];             // rescue swimmers: {targetId, x, y, phase}
     this.nextSharkAt = this._rand(this.cfg.sharkMinGap, this.cfg.sharkMaxGap);
     this.nextJellyAt = this._rand(this.cfg.jellyMinGap, this.cfg.jellyMaxGap);
     this.nextCrabAt = this._rand(this.cfg.crabMinGap, this.cfg.crabMaxGap);
@@ -317,7 +326,8 @@ class WaveRunnerGame {
     p.steer = null;
     p.target = {
       x: Math.max(2, Math.min(98, Number(x) || 0)),
-      y: Math.max(this.cfg.outerY - 14, Math.min(92, Number(y) || 0)),
+      y: Math.max(this.cfg.outerY - 14,
+        Math.min(this.cfg.boardwalkBottom - 5, Number(y) || 0)),
       run: !!run,
     };
   }
@@ -374,6 +384,8 @@ class WaveRunnerGame {
     // Dive — and dig, its on-sand cousin. Chaining either in quick
     // succession goes deeper: the third burrow takes the player clean off
     // the playfield, and sometimes they surface with a rare shell.
+    // No digging through boardwalk planks, though.
+    if (p.y >= this.cfg.boardwalkY) return;
     p.jumpCombo = 0;
     const onSand = p.y >= this.waterline();
     p.burrowCombo = (p.lastBurrowAt !== null && this.t - p.lastBurrowAt <= this.cfg.burrowComboGap)
@@ -530,6 +542,7 @@ class WaveRunnerGame {
     this._npcTick();
     this._movePlayers(dt);
     this._ripCurrent(dt);
+    this._rescues(dt);
     this._lifeguard(dt);
     this._weatherHazards();
     this._planeAndPowerups();
@@ -764,7 +777,8 @@ class WaveRunnerGame {
 
       if (p.steer) {
         p.x = Math.max(2, Math.min(98, p.x + p.steer.x * speed * dt));
-        p.y = Math.max(this.cfg.outerY - 14, Math.min(92, p.y + p.steer.y * speed * dt));
+        p.y = Math.max(this.cfg.outerY - 14,
+          Math.min(this.cfg.boardwalkBottom - 5, p.y + p.steer.y * speed * dt));
       } else if (p.target) {
         const d = this._dist(p, p.target);
         const step = speed * dt;
@@ -1031,18 +1045,79 @@ class WaveRunnerGame {
       }
       // Dragged out to sea, HP bleeding — swim sideways (or sprint hard
       // shoreward) to break free. A building or dying rip pulls gently.
+      // The channel runs clear to the top of the ocean: carried that far,
+      // you're swept out to sea for good — unless the lifeguard gets
+      // there first (see _rescues).
       p.y = Math.max(cfg.outerY - 14, p.y - cfg.ripPull * strength * dt);
       this._applyDamage(p, cfg.ripHpPerSec * strength * dt, 'rip');
-      if (p.state !== 'out' && p.y <= cfg.deepY) {
-        // Past the deep line: the lifeguard swims out and hauls them in
-        // for an extended cooldown on the sand.
-        this._washAshore(p, [40, 60]);
-        p.washedUntil = this.t + cfg.washStunSec * 2;
-        p.outSince = null;
-        p.whistled = false;
-        this._emit({ type: 'rip-rescue', playerId: p.id });
+      if (p.state !== 'out' && p.y <= cfg.sweptAwayY) {
+        this._emit({ type: 'swept-away', playerId: p.id });
+        this._applyDamage(p, p.hp, 'rip');   // gone — eliminated at sea
       }
     }
+  }
+
+  // ─── Rescue swimmers ──────────────────────────────────────────────────────
+
+  // Anyone rip-dragged past the buoy line gets a lifeguard launched after
+  // them: a race between the rescue swimmer and the current. Caught in
+  // time, the victim is hauled back to the sand for an extended cooldown;
+  // otherwise the rip wins (see _ripCurrent).
+  _rescues(dt) {
+    const cfg = this.cfg;
+    const waterline = this.waterline();
+    const inDistress = (id) => {
+      const p = this.players[id];
+      return !!(p && this.rip
+        && p.state !== 'out' && p.state !== 'washed'
+        && p.y < cfg.deepY
+        && Math.abs(p.x - this.rip.x) <= cfg.ripHalfWidth);
+    };
+
+    if (this.rip) {
+      for (const p of this._alivePlayers()) {
+        if (!inDistress(p.id)) continue;
+        if (this.lifeguards.some(g => g.targetId === p.id)) continue;
+        this.lifeguards.push({
+          id: `g${this.seq++}`,
+          targetId: p.id,
+          x: cfg.towerX,
+          y: waterline + 4,
+          phase: 'out',
+        });
+        this._emit({ type: 'lifeguard-launch', playerId: p.id });
+      }
+    }
+
+    const swimTo = (g, tx, ty) => {
+      const d = Math.hypot(tx - g.x, ty - g.y);
+      const step = cfg.rescueSpeed * dt;
+      if (d <= step) { g.x = tx; g.y = ty; return true; }
+      g.x += ((tx - g.x) / d) * step;
+      g.y += ((ty - g.y) / d) * step;
+      return false;
+    };
+
+    for (const g of this.lifeguards) {
+      if (g.phase === 'out') {
+        const p = this.players[g.targetId];
+        if (!inDistress(g.targetId)) {
+          // Escaped, rescued elsewhere, or lost to the sea — turn back.
+          g.phase = 'return';
+        } else if (swimTo(g, p.x, p.y) || this._dist(g, p) <= 4) {
+          this._washAshore(p, [40, 60]);
+          p.washedUntil = this.t + cfg.washStunSec * 2;   // extended cooldown
+          p.outSince = null;
+          p.whistled = false;
+          this._emit({ type: 'rip-rescue', playerId: p.id });
+          g.phase = 'return';
+        }
+      }
+      if (g.phase === 'return' && swimTo(g, cfg.towerX, waterline + 4)) {
+        g.phase = 'done';
+      }
+    }
+    this.lifeguards = this.lifeguards.filter(g => g.phase !== 'done');
   }
 
   // ─── Banner plane & power-ups ─────────────────────────────────────────────
@@ -1300,8 +1375,16 @@ class WaveRunnerGame {
         deepY: this.cfg.deepY,
         beachY: Math.round(this.waterline() * 10) / 10,   // the live sand line
         outerY: this.cfg.outerY,
+        boardwalkY: this.cfg.boardwalkY,
+        boardwalkBottom: this.cfg.boardwalkBottom,
         danger: this.surfDanger(),
       },
+      lifeguards: this.lifeguards.map(g => ({
+        id: g.id,
+        x: Math.round(g.x * 10) / 10,
+        y: Math.round(g.y * 10) / 10,
+        phase: g.phase,
+      })),
       strike: this.pendingStrike ? {
         x: Math.round(this.pendingStrike.x * 10) / 10,
         y: Math.round(this.pendingStrike.y * 10) / 10,

@@ -1327,14 +1327,40 @@ describe('rip currents', () => {
     expect(p.hp).toBe(hpAfterEscape);           // no longer bleeding
   });
 
-  test('the lifeguard rescues anyone dragged past the deep line', () => {
+  test('a lifeguard swims out and rescues anyone dragged past the buoys', () => {
     const game = ripGame();
     const p = addSwimmer(game, 'p1', game.cfg.deepY + 3, 50);
-    const events = run(game, 1.5);       // pull 12/s closes 3 units fast
+    const events = run(game, 9);
+    expect(events.find(e => e.type === 'lifeguard-launch')).toBeTruthy();
     expect(events.find(e => e.type === 'rip-rescue')).toBeTruthy();
-    expect(p.state).toBe('washed');
-    expect(p.y).toBeGreaterThanOrEqual(game.cfg.beachY);   // back on the sand
-    expect(p.washedUntil - game.t).toBeGreaterThan(game.cfg.washStunSec * 0.9);
+    expect(events.find(e => e.type === 'swept-away')).toBeUndefined();
+    expect(p.state).not.toBe('out');
+    expect(p.y).toBeGreaterThanOrEqual(game.cfg.deepY);    // hauled back in
+    run(game, 6);                                          // guard swims home
+    expect(game.lifeguards).toHaveLength(0);
+  });
+
+  test('carried to the top of the ocean, the rip wins — swept out to sea', () => {
+    const game = ripGame();
+    const p = addSwimmer(game, 'p1', -70, 50);   // already far out when it hits
+    const events = run(game, 4);
+    expect(events.find(e => e.type === 'swept-away')).toBeTruthy();
+    expect(events.find(e => e.type === 'eliminated' && e.playerId === 'p1')).toBeTruthy();
+    expect(events.find(e => e.type === 'rip-rescue')).toBeUndefined();
+    expect(p.state).toBe('out');
+  });
+
+  test('escaping the rip calls the rescue off', () => {
+    const game = ripGame();
+    const p = addSwimmer(game, 'p1', game.cfg.deepY - 4, 50);
+    const early = run(game, 0.4);
+    expect(early.find(e => e.type === 'lifeguard-launch')).toBeTruthy();
+    game.handleSteer('p1', 1, 0);                // swim out the side
+    const later = run(game, 2.5);
+    expect(later.find(e => e.type === 'rip-rescue')).toBeUndefined();
+    expect(p.state).toBe('idle');
+    run(game, 6);
+    expect(game.lifeguards).toHaveLength(0);     // swam home empty-handed
   });
 
   test('swimmers outside the channel are untouched', () => {
@@ -1565,5 +1591,25 @@ describe('swells beyond the break', () => {
     expect(events.find(e => e.type === 'swell-swept' && e.playerId === 'deep')).toBeTruthy();
     expect(deep.hp).toBe(100 - game.cfg.swellDamage);
     expect(surf.state).toBe('washed');          // stood through a roller
+  });
+});
+
+describe('the boardwalk', () => {
+  test('players can walk down onto the boardwalk', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 80, 50);
+    game.handleMove('p1', 50, 140);
+    run(game, 5);
+    expect(p.y).toBeCloseTo(140, 0);
+    expect(game.snapshot().flags.boardwalkY).toBe(game.cfg.boardwalkY);
+    expect(game.snapshot().flags.boardwalkBottom).toBe(game.cfg.boardwalkBottom);
+  });
+
+  test('no digging through the planks', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 120, 50);   // standing on the boardwalk
+    game.handleAction('p1', 'dive');
+    expect(p.action).toBeNull();
+    expect(p.burrowCombo).toBe(0);               // the press never counted
   });
 });

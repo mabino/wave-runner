@@ -661,6 +661,16 @@
           ? '🛟 The lifeguard hauled you out of the rip — catch your breath'
           : `🛟 ${snapName(ev.playerId)} got rescued from a rip`, 'warn');
         break;
+      case 'lifeguard-launch':
+        Beach.sfx.whistle();
+        if (mine) toast('🛟 The lifeguard is swimming out for you — hold on!', 'warn');
+        break;
+      case 'swept-away':
+        Beach.sfx.bigSplash();
+        toast(mine
+          ? '🌊 Swept out to sea… your beach day is over'
+          : `🌊 ${snapName(ev.playerId)} was swept out to sea!`, 'danger');
+        break;
       case 'shark':
         Beach.sfx.sharkAlert();
         toast('🦈 Fin spotted — clear the water!', 'warn');
