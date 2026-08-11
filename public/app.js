@@ -565,7 +565,7 @@
       case 'lightning': {
         Beach.sfx.thunder();
         if (ev.playerId !== null) Beach.sfx.zap();
-        GameRenderer.flash(null);
+        GameRenderer.flash(ev.x ?? null);   // bolt lands on the telegraphed spot
         if (mine) toast(ev.blocked ? '🦺 The body suit took the bolt!' : '⚡ Struck by lightning!', ev.blocked ? 'warn' : 'danger');
         break;
       }
@@ -617,6 +617,15 @@
         break;
       case 'salp-sting':
         if (mine) { Beach.sfx.sting(); toast('🪼 That was no salp — stung!', 'danger'); }
+        break;
+      case 'rip-caught':
+        if (mine) { Beach.sfx.bigSplash(); toast('🌀 Rip current! Swim sideways to escape!', 'danger'); }
+        break;
+      case 'rip-rescue':
+        Beach.sfx.whistle();
+        toast(mine
+          ? '🛟 The lifeguard hauled you out of the rip — catch your breath'
+          : `🛟 ${snapName(ev.playerId)} got rescued from a rip`, 'warn');
         break;
       case 'shark':
         Beach.sfx.sharkAlert();

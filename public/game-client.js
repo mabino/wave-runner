@@ -204,29 +204,30 @@
     }
   }
 
-  function drawFlag(x, beachTop) {
+  // Lifeguard flags read the surf: 1 yellow (easy), 2 yellow (lively),
+  // 1 red (rough), 2 red (double-red — respect the ocean).
+  function drawFlag(x, beachTop, danger) {
     const fx = sx(x);
+    const level = danger || 0;
+    const color = level >= 2 ? '#e0403c' : '#ffd23c';
+    const count = (level % 2) + 1;
     ctx.strokeStyle = '#8a5a2a';
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(fx, beachTop + 4);
-    ctx.lineTo(fx, beachTop - 26);
+    ctx.lineTo(fx, beachTop - (count === 2 ? 38 : 26));
     ctx.stroke();
     const wave = Math.sin(performance.now() / 300 + x) * 3;
-    ctx.fillStyle = '#e0403c';
-    ctx.beginPath();
-    ctx.moveTo(fx, beachTop - 26);
-    ctx.lineTo(fx + 18, beachTop - 21 + wave);
-    ctx.lineTo(fx, beachTop - 15);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = '#ffd97b';
-    ctx.beginPath();
-    ctx.moveTo(fx, beachTop - 23);
-    ctx.lineTo(fx + 11, beachTop - 20 + wave * 0.7);
-    ctx.lineTo(fx, beachTop - 17);
-    ctx.closePath();
-    ctx.fill();
+    for (let i = 0; i < count; i++) {
+      const top = beachTop - (count === 2 ? 38 : 26) + i * 13;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(fx, top);
+      ctx.lineTo(fx + 18, top + 5 + wave);
+      ctx.lineTo(fx, top + 11);
+      ctx.closePath();
+      ctx.fill();
+    }
   }
 
   function drawBuoys(deepY) {
@@ -545,6 +546,41 @@
     }
   }
 
+  // The doomed patch of water glows before a lightning strike — swim clear.
+  function drawStrikeWarning(s) {
+    const x = sx(s.x), y = sy(s.y);
+    const flicker = 0.85 + Math.sin(performance.now() / 45) * 0.15;
+    const r = (14 + s.progress * 14) * flicker;
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, `rgba(253, 246, 200, ${0.28 + s.progress * 0.35})`);
+    grad.addColorStop(0.6, `rgba(253, 246, 200, ${0.10 + s.progress * 0.15})`);
+    grad.addColorStop(1, 'rgba(253, 246, 200, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // A rip current: a subtly darker channel with foam streaking out to sea.
+  function drawRip(r, beachTop) {
+    const x0 = sx(r.x - r.halfW);
+    const x1 = sx(r.x + r.halfW);
+    const top = sy(snap.flags.deepY);
+    const h = beachTop - top;
+    ctx.fillStyle = 'rgba(8, 30, 48, 0.15)';
+    ctx.fillRect(x0, top, x1 - x0, h);
+    // Outbound foam streaks, drifting toward the horizon.
+    const t = performance.now() / 1000;
+    ctx.fillStyle = 'rgba(255,255,255,0.16)';
+    const lanes = 4;
+    for (let i = 0; i < lanes; i++) {
+      const lx = x0 + ((i + 0.5) / lanes) * (x1 - x0) + Math.sin(t + i * 2) * 3;
+      const ph = ((t * 26 + i * 41) % h);
+      ctx.fillRect(lx - 1, beachTop - ph - 8, 2, 8);
+      ctx.fillRect(lx - 1, beachTop - ((ph + h * 0.5) % h) - 6, 2, 6);
+    }
+  }
+
   function drawRain() {
     ctx.strokeStyle = 'rgba(200,225,240,.35)';
     ctx.lineWidth = 1;
@@ -601,11 +637,13 @@
     const beachTop = sy(snap.flags.beachY);
     const br = bracket();
     drawOcean(beachTop);
+    if (snap.rip) drawRip(snap.rip, beachTop);
     drawBuoys(snap.flags.deepY);
     for (const w of lerpedWaves(br)) drawWave(w, beachTop);
+    if (snap.strike) drawStrikeWarning(snap.strike);
     drawBeach(beachTop);
-    drawFlag(snap.flags.minX, beachTop);
-    drawFlag(snap.flags.maxX, beachTop);
+    drawFlag(snap.flags.minX, beachTop, snap.flags.danger);
+    drawFlag(snap.flags.maxX, beachTop, snap.flags.danger);
 
     // Decorative umbrellas along the back of the beach.
     const backY = Math.min(H - 12, beachTop + (H - beachTop) * 0.72);

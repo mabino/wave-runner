@@ -58,6 +58,15 @@ const DEFAULTS = {
   lightningMinGap: 4,       // seconds between strikes during a storm hour
   lightningMaxGap: 9,
   lightningDamage: 55,
+  lightningTelegraphSec: 1.5,  // the spot glows this long before the bolt
+  lightningRadius: 7,          // blast radius around the telegraphed spot
+
+  // Rip currents: a narrow channel that drags swimmers out to sea and
+  // saps HP until they swim sideways out of it (or sprint hard against
+  // it) — or the lifeguard hauls them in past the deep line.
+  ripMinGap: 35,    ripMaxGap: 70,
+  ripDurMin: 18,    ripDurMax: 28,
+  ripHalfWidth: 6,  ripPull: 12,   ripHpPerSec: 4,
 
   planeMinGap: 22,          // seconds between banner-plane passes
   planeMaxGap: 40,
@@ -136,6 +145,9 @@ class WaveRunnerGame {
     this.nextPlaneAt = this._rand(this.cfg.planeMinGap, this.cfg.planeMaxGap);
     this.pendingDropAt = null;
     this.nextLightningAt = null;
+    this.pendingStrike = null;        // telegraphed lightning: {x, y, at}
+    this.rip = null;                  // active rip current: {x, until, caught}
+    this.nextRipAt = this._rand(this.cfg.ripMinGap, this.cfg.ripMaxGap);
     this.nextSharkAt = this._rand(this.cfg.sharkMinGap, this.cfg.sharkMaxGap);
     this.nextJellyAt = this._rand(this.cfg.jellyMinGap, this.cfg.jellyMaxGap);
     this.nextCrabAt = this._rand(this.cfg.crabMinGap, this.cfg.crabMaxGap);
@@ -249,6 +261,16 @@ class WaveRunnerGame {
       next1: this.hours[i + 1] || null,
       next2: this.hours[i + 2] || null,
     };
+  }
+
+  // Lifeguard flag level 0-3: how mean the surf is right now. Rougher
+  // late-day sets, a fast high tide, and storm weather all raise it.
+  // 0 yellow · 1 double yellow · 2 red · 3 double red.
+  surfDanger() {
+    const dayFrac = Math.min(1, this.t / this.cfg.dayLengthSec);
+    const tideTerm = this.cfg.tideSpeedGain * this.tide() * 1.6;
+    const score = 0.6 * dayFrac + tideTerm + (this.weatherNow() === 'storm' ? 0.35 : 0);
+    return score < 0.25 ? 0 : score < 0.55 ? 1 : score < 0.85 ? 2 : 3;
   }
 
   // ─── Input handlers (called by the server on socket events) ───────────────
@@ -411,6 +433,7 @@ class WaveRunnerGame {
     this._advanceWaves(dt);
     this._npcTick();
     this._movePlayers(dt);
+    this._ripCurrent(dt);
     this._lifeguard(dt);
     this._weatherHazards();
     this._planeAndPowerups();
@@ -760,23 +783,97 @@ class WaveRunnerGame {
   _weatherHazards() {
     if (this.weatherNow() !== 'storm') {
       this.nextLightningAt = null;
+      this.pendingStrike = null;
       return;
     }
     if (this.nextLightningAt === null) {
       this.nextLightningAt = this.t + this._rand(this.cfg.lightningMinGap, this.cfg.lightningMaxGap);
     }
-    if (this.t >= this.nextLightningAt) {
-      this.nextLightningAt = this.t + this._rand(this.cfg.lightningMinGap, this.cfg.lightningMaxGap);
+
+    // A strike is telegraphed: the doomed patch of water glows for a
+    // moment first, so a sharp swimmer can clear out of it.
+    if (!this.pendingStrike && this.t >= this.nextLightningAt) {
+      const waterline = this.waterline();
       const swimmers = this._alivePlayers()
-        .filter(p => p.y < this.waterline() && !this._actionActive(p, 'dig'));
-      if (swimmers.length === 0) {
-        this._emit({ type: 'lightning', playerId: null });
+        .filter(p => p.y < waterline && !this._actionActive(p, 'dig'));
+      let x, y;
+      if (swimmers.length && this.rng() < 0.8) {
+        const near = swimmers[Math.floor(this.rng() * swimmers.length)];
+        x = near.x + this._rand(-4, 4);
+        y = near.y + this._rand(-4, 4);
+      } else {
+        x = this._rand(15, 85);
+        y = this._rand(this.cfg.deepY, waterline - 4);
+      }
+      this.pendingStrike = {
+        x: Math.max(5, Math.min(95, x)),
+        y: Math.min(waterline - 3, Math.max(4, y)),
+        at: this.t + this.cfg.lightningTelegraphSec,
+      };
+      this._emit({ type: 'lightning-warn', x: this.pendingStrike.x, y: this.pendingStrike.y });
+    }
+
+    if (this.pendingStrike && this.t >= this.pendingStrike.at) {
+      const { x, y } = this.pendingStrike;
+      this.pendingStrike = null;
+      this.nextLightningAt = this.t + this._rand(this.cfg.lightningMinGap, this.cfg.lightningMaxGap);
+      const waterline = this.waterline();
+      const victims = this._alivePlayers().filter(p =>
+        p.y < waterline
+        && !this._actionActive(p, 'dig')
+        && Math.hypot(p.x - x, p.y - y) <= this.cfg.lightningRadius);
+      if (victims.length === 0) {
+        this._emit({ type: 'lightning', playerId: null, x, y });
         return;
       }
-      const target = swimmers[Math.floor(this.rng() * swimmers.length)];
-      const blocked = this.t < target.buffs.bodysuit;
-      this._emit({ type: 'lightning', playerId: target.id, blocked });
-      if (!blocked) this._applyDamage(target, this.cfg.lightningDamage, 'lightning');
+      const first = victims[0];
+      this._emit({ type: 'lightning', playerId: first.id, blocked: this.t < first.buffs.bodysuit, x, y });
+      for (const v of victims) {
+        if (this.t < v.buffs.bodysuit) continue;
+        this._applyDamage(v, this.cfg.lightningDamage, 'lightning');
+      }
+    }
+  }
+
+  // ─── Rip current ──────────────────────────────────────────────────────────
+
+  _ripCurrent(dt) {
+    const cfg = this.cfg;
+    if (!this.rip && this.t >= this.nextRipAt) {
+      this.rip = {
+        x: this._rand(cfg.flagMinX + 5, cfg.flagMaxX - 5),
+        until: this.t + this._rand(cfg.ripDurMin, cfg.ripDurMax),
+        caught: new Set(),
+      };
+      this._emit({ type: 'rip-current', x: this.rip.x });
+    }
+    if (!this.rip) return;
+    if (this.t >= this.rip.until) {
+      this.rip = null;
+      this.nextRipAt = this.t + this._rand(cfg.ripMinGap, cfg.ripMaxGap);
+      return;
+    }
+    const waterline = this.waterline();
+    for (const p of this._alivePlayers()) {
+      if (p.state === 'washed' || p.y >= waterline) continue;
+      if (Math.abs(p.x - this.rip.x) > cfg.ripHalfWidth) continue;
+      if (!this.rip.caught.has(p.id)) {
+        this.rip.caught.add(p.id);
+        this._emit({ type: 'rip-caught', playerId: p.id });
+      }
+      // Dragged out to sea, HP bleeding — swim sideways (or sprint hard
+      // shoreward) to break free.
+      p.y = Math.max(2, p.y - cfg.ripPull * dt);
+      this._applyDamage(p, cfg.ripHpPerSec * dt, 'rip');
+      if (p.state !== 'out' && p.y <= cfg.deepY) {
+        // Past the deep line: the lifeguard swims out and hauls them in
+        // for an extended cooldown on the sand.
+        this._washAshore(p, [40, 60]);
+        p.washedUntil = this.t + cfg.washStunSec * 2;
+        p.outSince = null;
+        p.whistled = false;
+        this._emit({ type: 'rip-rescue', playerId: p.id });
+      }
     }
   }
 
@@ -1034,7 +1131,18 @@ class WaveRunnerGame {
         maxX: this.cfg.flagMaxX,
         deepY: this.cfg.deepY,
         beachY: Math.round(this.waterline() * 10) / 10,   // the live sand line
+        danger: this.surfDanger(),
       },
+      strike: this.pendingStrike ? {
+        x: Math.round(this.pendingStrike.x * 10) / 10,
+        y: Math.round(this.pendingStrike.y * 10) / 10,
+        progress: Math.min(1, Math.max(0,
+          1 - (this.pendingStrike.at - this.t) / this.cfg.lightningTelegraphSec)),
+      } : null,
+      rip: this.rip ? {
+        x: Math.round(this.rip.x * 10) / 10,
+        halfW: this.cfg.ripHalfWidth,
+      } : null,
       players: Object.values(this.players).map(p => ({
         id: p.id,
         name: p.name,

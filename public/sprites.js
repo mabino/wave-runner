@@ -232,15 +232,11 @@
   // archetype stays a single-map job. headEnd marks the last head row.
 
   // K pixels in the head zone are facial detail (eyes, shade lenses). Erase
-  // them into their surroundings; keepLast leaves the trailing one — the
-  // single visible eye of a profile view.
-  function eraseFace(row, keepLast) {
+  // them into their surroundings for the back view.
+  function eraseFace(row) {
     const chars = row.split('');
-    const ks = [];
-    for (let i = 0; i < chars.length; i++) if (chars[i] === 'K') ks.push(i);
-    const keep = keepLast ? ks[ks.length - 1] : -1;
-    for (const i of ks) {
-      if (i === keep) continue;
+    for (let i = 0; i < chars.length; i++) {
+      if (chars[i] !== 'K') continue;
       chars[i] = (chars[i - 1] && chars[i - 1] !== '.' && chars[i - 1] !== 'K')
         ? chars[i - 1]
         : (chars[i + 1] && chars[i + 1] !== '.' ? chars[i + 1] : 'H');
@@ -251,13 +247,14 @@
   // Seen from behind: no face, and the head is hair (hats keep their color).
   function backRows(arch) {
     return arch.rows.map((row, y) =>
-      y > arch.headEnd ? row : eraseFace(row, false).replace(/S/g, 'H'));
+      y > arch.headEnd ? row : eraseFace(row).replace(/S/g, 'H'));
   }
 
-  // Right-facing profile: one leading eye, head nudged toward travel.
+  // Left/right profile: the whole face — both eyes — rides with the head,
+  // nudged one pixel toward the direction of travel.
   function sideRows(arch) {
     return arch.rows.map((row, y) =>
-      y > arch.headEnd ? row : '.' + eraseFace(row, true).slice(0, -1));
+      y > arch.headEnd ? row : '.' + row.slice(0, -1));
   }
 
   const mirrorRows = (rows) => rows.map(r => r.split('').reverse().join(''));

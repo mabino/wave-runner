@@ -12,6 +12,7 @@ function makeGame(config = {}, rng = () => 0.5) {
   game.nextCrabAt = Infinity;
   game.nextGullAt = Infinity;
   game.nextSalpAt = Infinity;
+  game.nextRipAt = Infinity;
   return game;
 }
 
@@ -1219,5 +1220,131 @@ describe('pails and salps', () => {
     game.salps.push({ id: 'sa', x: 50, y: 40, vx: 0, vy: 0, sting: false, expiresAt: 1 });
     run(game, 1.3);
     expect(game.salps).toHaveLength(0);
+  });
+});
+
+describe('surf danger flags', () => {
+  test('a calm morning flies a single yellow flag', () => {
+    const game = makeGame();
+    expect(game.surfDanger()).toBe(0);
+    expect(game.snapshot().flags.danger).toBe(0);
+  });
+
+  test('danger climbs with the day, the tide, and the weather', () => {
+    const game = makeGame();
+    game.t = game.cfg.dayLengthSec * 0.5;      // midday, slack tide
+    expect(game.surfDanger()).toBe(1);
+    game.t = game.cfg.dayLengthSec * 0.625;    // high tide running fast
+    expect(game.surfDanger()).toBe(2);
+    game.hours = game.hours.map(() => 'storm');
+    expect(game.surfDanger()).toBe(3);         // storm on top: double red
+  });
+});
+
+describe('telegraphed lightning', () => {
+  function stormGame() {
+    const game = makeGame();
+    game.hours = Array(game.hours.length).fill('storm');
+    return game;
+  }
+
+  test('the strike spot glows before the bolt lands', () => {
+    const game = stormGame();
+    const p = addSwimmer(game);
+    game.nextLightningAt = 0.05;
+    const warnEvents = run(game, 0.3);
+    const warn = warnEvents.find(e => e.type === 'lightning-warn');
+    expect(warn).toBeTruthy();
+    const snap = game.snapshot();
+    expect(snap.strike).toBeTruthy();
+    expect(snap.strike.progress).toBeGreaterThanOrEqual(0);
+    // No damage yet — the telegraph is still running.
+    expect(p.hp).toBe(100);
+    const strikeEvents = run(game, game.cfg.lightningTelegraphSec + 0.2);
+    expect(strikeEvents.find(e => e.type === 'lightning')).toBeTruthy();
+    expect(game.snapshot().strike).toBeNull();
+  });
+
+  test('standing on the glowing spot gets you struck', () => {
+    const game = stormGame();
+    const p = addSwimmer(game);          // stays put at 50,40
+    game.nextLightningAt = 0.05;
+    const events = run(game, game.cfg.lightningTelegraphSec + 0.5);
+    const strike = events.find(e => e.type === 'lightning');
+    expect(strike.playerId).toBe('p1');
+    expect(p.hp).toBe(100 - game.cfg.lightningDamage);
+  });
+
+  test('swimming clear of the telegraph dodges the bolt', () => {
+    const game = stormGame();
+    const p = addSwimmer(game);
+    game.nextLightningAt = 0.05;
+    run(game, 0.2);                      // telegraph appears near the swimmer
+    p.x = 90;                            // teleport well outside the radius
+    p.y = 30;
+    const events = run(game, game.cfg.lightningTelegraphSec + 0.5);
+    const strike = events.find(e => e.type === 'lightning');
+    expect(strike.playerId).toBeNull();
+    expect(p.hp).toBe(100);
+  });
+});
+
+describe('rip currents', () => {
+  function ripGame() {
+    const game = makeGame();
+    game.nextRipAt = 0.05;
+    return game;
+  }
+
+  test('a caught swimmer is dragged out to sea and bleeds HP', () => {
+    const game = ripGame();
+    const p = addSwimmer(game, 'p1', 50, 50);
+    const events = run(game, 0.2);       // rip spawns at x=50 (constant rng)
+    expect(game.rip).toBeTruthy();
+    events.push(...run(game, 1));
+    expect(events.find(e => e.type === 'rip-caught')).toBeTruthy();
+    expect(p.y).toBeLessThan(50);        // pulled toward the horizon
+    expect(p.hp).toBeLessThan(100);
+  });
+
+  test('swimming sideways escapes the channel', () => {
+    const game = ripGame();
+    const p = addSwimmer(game, 'p1', 50, 50);
+    run(game, 0.3);
+    game.handleSteer('p1', 1, 0);        // swim parallel to the beach
+    run(game, 1.5);                      // 15 units — well past halfWidth 6
+    const yAfterEscape = p.y;
+    const hpAfterEscape = p.hp;
+    run(game, 1);
+    expect(p.y).toBeCloseTo(yAfterEscape, 1);   // no longer being dragged
+    expect(p.hp).toBe(hpAfterEscape);           // no longer bleeding
+  });
+
+  test('the lifeguard rescues anyone dragged past the deep line', () => {
+    const game = ripGame();
+    const p = addSwimmer(game, 'p1', game.cfg.deepY + 3, 50);
+    const events = run(game, 1.5);       // pull 12/s closes 3 units fast
+    expect(events.find(e => e.type === 'rip-rescue')).toBeTruthy();
+    expect(p.state).toBe('washed');
+    expect(p.y).toBeGreaterThanOrEqual(game.cfg.beachY);   // back on the sand
+    expect(p.washedUntil - game.t).toBeGreaterThan(game.cfg.washStunSec * 0.9);
+  });
+
+  test('swimmers outside the channel are untouched', () => {
+    const game = ripGame();
+    const p = addSwimmer(game, 'p1', 40, 80);   // far from rip at x=50
+    run(game, 2);
+    expect(p.hp).toBe(100);
+    expect(p.y).toBe(40);
+  });
+
+  test('rips expire and the water calms down', () => {
+    const game = ripGame();
+    run(game, 0.2);
+    expect(game.rip).toBeTruthy();
+    game.rip.until = game.t + 0.1;
+    run(game, 0.3);
+    expect(game.rip).toBeNull();
+    expect(game.snapshot().rip).toBeNull();
   });
 });

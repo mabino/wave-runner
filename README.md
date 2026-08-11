@@ -34,9 +34,20 @@ keyboard setup is detected). Served at `binolabs.com/waves/`.
   angles that sharpen late in the day.
 - **Status bar** shows the time of day plus the next two hours of weather.
   When a **thunderstorm** hour arrives, being in the water risks a lightning
-  strike — wait it out on the sand, or wear the body suit.
+  strike — but every bolt is telegraphed: the doomed patch of water glows
+  for a moment first, so a sharp swimmer can clear out (or wear the body
+  suit and ignore it).
+- **Lifeguard flags** read the surf danger and update live: one yellow
+  (easy), two yellow (lively), one red (rough), two red (double red —
+  respect the ocean). Rougher late-day sets, a fast high tide, and storm
+  weather all raise the level.
 - **Lifeguards** whistle anyone beyond the flags or too far out; linger and
   they haul you in with an HP penalty.
+- **Rip currents** open now and then: a subtly darker channel of outbound
+  foam that drags anyone in it further and further out to sea while
+  draining HP fast. Swim **parallel to the beach** to escape (or sprint
+  hard shoreward); otherwise the lifeguard hauls you out past the deep
+  line for an extended cooldown on the sand.
 - Scores are **Pleasant Points (ppts)** — waves, streaks, perfect reads,
   dive premiums, and scooped salps all pay into the same tally.
 - **Umbrella** (⛱️ button): stretch out in the shade beneath your umbrella
