@@ -216,32 +216,118 @@
     if (bwTop < H) drawBoardwalk(bwTop);
   }
 
-  // The Bait & Tackle shop: a little shack on the boardwalk.
+  // The Bait & Tackle shop: a proper storefront on the boardwalk, with a
+  // doorway tall enough for a beachgoer to walk through.
   function drawShop(s) {
     const x = sx(s.x), y = sy(s.y);
-    if (y < -60 || y > H + 60) return;
-    // Walls.
+    if (y < -110 || y > H + 110) return;
+    const scale = Math.max(2.4, Math.min(3.4, W / 150));
+    const doorH = window.Sprites.SPRITE_H * scale * 0.95;   // ~avatar height
+    const doorW = window.Sprites.SPRITE_W * scale * 0.85;
+    const bw = doorW * 4.6;                                 // building width
+    const bh = doorH * 1.5;
+    // Walls with clapboard lines.
     ctx.fillStyle = '#6d4f2e';
-    ctx.fillRect(x - 26, y - 26, 52, 30);
-    ctx.fillStyle = '#5a3f22';
-    ctx.fillRect(x - 26, y - 26, 52, 4);
-    // Door + window.
-    ctx.fillStyle = '#3c2a14';
-    ctx.fillRect(x - 6, y - 12, 12, 16);
-    ctx.fillStyle = '#bfe3ef';
-    ctx.fillRect(x - 20, y - 18, 9, 8);
-    ctx.fillRect(x + 11, y - 18, 9, 8);
-    // Striped awning.
-    for (let i = 0; i < 6; i++) {
-      ctx.fillStyle = i % 2 ? '#ffffff' : '#e0403c';
-      ctx.fillRect(x - 30 + i * 10, y - 34, 10, 8);
+    ctx.fillRect(x - bw / 2, y - bh, bw, bh + 4);
+    ctx.strokeStyle = 'rgba(0,0,0,.14)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let ly = y - bh + 8; ly < y; ly += 8) {
+      ctx.moveTo(x - bw / 2, ly);
+      ctx.lineTo(x + bw / 2, ly);
     }
-    // Sign.
-    ctx.font = '700 9px system-ui';
+    ctx.stroke();
+    // The doorway — dark, avatar-sized, dead center. Walk right in.
+    ctx.fillStyle = '#241708';
+    ctx.fillRect(x - doorW / 2, y - doorH, doorW, doorH + 4);
+    ctx.fillStyle = 'rgba(255, 217, 123, .25)';             // lamplight inside
+    ctx.fillRect(x - doorW / 2 + 2, y - doorH + 2, doorW - 4, 6);
+    // Windows with tackle on display.
+    ctx.fillStyle = '#bfe3ef';
+    ctx.fillRect(x - bw / 2 + 8, y - doorH * 0.8, doorW * 0.9, doorH * 0.42);
+    ctx.fillRect(x + bw / 2 - 8 - doorW * 0.9, y - doorH * 0.8, doorW * 0.9, doorH * 0.42);
+    ctx.font = `${Math.round(doorH * 0.22)}px system-ui`;
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'alphabetic';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🪱', x - bw / 2 + 8 + doorW * 0.45, y - doorH * 0.58);
+    ctx.fillText('🛟', x + bw / 2 - 8 - doorW * 0.45, y - doorH * 0.58);
+    // Striped awning across the front.
+    const stripes = 8;
+    for (let i = 0; i < stripes; i++) {
+      ctx.fillStyle = i % 2 ? '#ffffff' : '#e0403c';
+      ctx.fillRect(x - bw / 2 - 4 + i * ((bw + 8) / stripes), y - bh - 2, (bw + 8) / stripes, 12);
+    }
+    // Sign above.
+    ctx.font = `700 ${Math.round(doorH * 0.24)}px system-ui`;
     ctx.fillStyle = '#ffd97b';
-    ctx.fillText('🎣 BAIT & TACKLE', x, y - 38);
+    ctx.strokeStyle = 'rgba(0,0,0,.55)';
+    ctx.lineWidth = 3;
+    ctx.textBaseline = 'alphabetic';
+    ctx.strokeText('🎣 BAIT & TACKLE', x, y - bh - 8);
+    ctx.fillText('🎣 BAIT & TACKLE', x, y - bh - 8);
+  }
+
+  // Inside the shop: aisles, browsing regulars, and the Skipper at the
+  // counter. The beach day keeps running — this is just your view of it.
+  function drawShopInterior(me) {
+    const scale = Math.max(2.6, Math.min(3.8, W / 140));
+    const sw = window.Sprites.SPRITE_W * scale;
+    const sh = window.Sprites.SPRITE_H * scale;
+    const t = performance.now() / 1000;
+
+    // Floor planks.
+    ctx.fillStyle = '#8a683f';
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = 'rgba(40, 26, 10, .25)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let y = 0; y < H; y += 14) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+    ctx.stroke();
+    // Back wall + sign.
+    ctx.fillStyle = '#5c4326';
+    ctx.fillRect(0, 0, W, H * 0.16);
+    ctx.font = `700 ${Math.round(H * 0.035)}px system-ui`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffd97b';
+    ctx.fillText('🎣 BAIT & TACKLE', W / 2, H * 0.1);
+
+    // Counter with the Skipper behind it.
+    const counterY = H * 0.26;
+    const keeper = window.Sprites.spriteCanvas(7, 1, 5, 'down', 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(keeper, W / 2 - sw / 2, counterY - sh * 0.9, sw, sh);
+    ctx.fillStyle = '#6d4f2e';
+    ctx.fillRect(W * 0.28, counterY, W * 0.44, 16);
+    ctx.fillStyle = '#553d1e';
+    ctx.fillRect(W * 0.28, counterY + 16, W * 0.44, 7);
+    ctx.font = '13px system-ui';
+    ctx.fillText('🪱', W * 0.34, counterY + 10);
+    ctx.fillText('🐟', W * 0.66, counterY + 10);
+
+    // Two aisles of beach sundries.
+    const aisle = (ay, items) => {
+      ctx.fillStyle = '#75552e';
+      ctx.fillRect(W * 0.12, ay, W * 0.76, 13);
+      ctx.fillStyle = '#5c4020';
+      ctx.fillRect(W * 0.12, ay + 13, W * 0.76, 5);
+      ctx.font = '12px system-ui';
+      items.forEach((it, i) => ctx.fillText(it, W * (0.2 + i * 0.15), ay + 7));
+    };
+    aisle(H * 0.48, ['🧴', '🛟', '🪱', '🛹', '🧺']);
+    aisle(H * 0.66, ['🐟', '🥤', '🍦', '🧢', '🩴']);
+
+    // Regulars browsing the aisles (window dressing, not interactive).
+    const bob1 = Math.sin(t * 1.3) * 2;
+    const bob2 = Math.sin(t * 1.1 + 2) * 2;
+    ctx.drawImage(window.Sprites.spriteCanvas(2, 1, 4, 'up', 0), W * 0.22 - sw / 2, H * 0.48 + 8 + bob1, sw, sh);
+    ctx.drawImage(window.Sprites.spriteCanvas(4, 3, 1, 'up', 0), W * 0.72 - sw / 2, H * 0.66 + 8 + bob2, sw, sh);
+
+    // You, at the counter's queue.
+    const mine = window.Sprites.spriteCanvas(me.avatar.archetype, me.avatar.skin, me.avatar.outfit, 'up', 0);
+    ctx.drawImage(mine, W / 2 - sw / 2, H * 0.82, sw, sh);
+    // Door mat back out to the boardwalk.
+    ctx.fillStyle = 'rgba(36, 23, 8, .8)';
+    ctx.fillRect(W / 2 - sw, H - 10, sw * 2, 10);
   }
 
   // The boardwalk behind the beach — just weathered planks for now.
@@ -529,6 +615,9 @@
     const x = sx(p.x), y = sy(p.y);
     const bob = walking ? -Math.abs(Math.sin(phase * Math.PI * 2)) * scale * 0.5 : 0;
 
+    // Shoppers are indoors — nothing of them to draw on the map.
+    if (p.inShop) return;
+
     // Deep search: the player is off the playfield entirely. Only their
     // own screen shows a faint ripple so they don't lose themselves.
     if (p.action === 'vanish') {
@@ -769,9 +858,18 @@
     if (canvas.clientWidth !== W || canvas.clientHeight !== H) resize();
     if (!snap || W === 0 || H === 0) return;
 
+    const meNow = snap.players.find(p => p.id === myId);
+
+    // Inside the Bait & Tackle: your screen shows the interior while the
+    // beach day keeps playing out for everyone else.
+    if (meNow && meNow.inShop) {
+      drawShopInterior(meNow);
+      drawFloaters();
+      return;
+    }
+
     // Camera follows me out to sea — or back to the boardwalk — and eases
     // home to the classic view in between.
-    const meNow = snap.players.find(p => p.id === myId);
     let camTarget = 0;
     if (meNow) {
       const maxCam = (snap.flags.boardwalkBottom ?? 100) - 100;

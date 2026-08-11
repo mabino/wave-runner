@@ -24,8 +24,9 @@ const DEFAULTS = {
   boardwalkBottom: 150,     // ...and end here
 
   // The Bait & Tackle shop on the boardwalk: sells bait, buys fish.
-  // Walk into it to trade — one transaction round per visit.
-  shopX: 30, shopY: 118, shopRadius: 8,
+  // Walk into the door to step inside; trading is menu-driven at the
+  // counter, and the beach day keeps playing out while you browse.
+  shopX: 30, shopY: 118, shopDoorRadius: 3.5,
   baitCost: 10,             // ppts for one worm
   fishSellPoints: 25,       // ppts per fish sold
   fishLureMin: 6,           // seconds of soaking before a bite
@@ -257,7 +258,7 @@ class WaveRunnerGame {
       bait: 0,                       // worms from the Bait & Tackle shop
       fish: 0,                       // the day's catch (shark insurance)
       nextFishAt: null,              // pending bite while bait soaks
-      atShop: false,                 // debounce: one trade round per visit
+      inShop: false,                 // browsing the Bait & Tackle interior
       shoveReadyAt: 0,
       outSince: null,
       whistled: false,
@@ -333,7 +334,7 @@ class WaveRunnerGame {
 
   handleMove(id, x, y, run) {
     const p = this.players[id];
-    if (!p || p.state === 'out' || p.state === 'washed' || this.phase !== 'running') return;
+    if (!p || p.state === 'out' || p.state === 'washed' || p.inShop || this.phase !== 'running') return;
     if (p.state === 'resting') p.state = 'idle';   // stand up and walk
     p.pendingRest = false;
     p.pendingPickup = null;
@@ -349,7 +350,7 @@ class WaveRunnerGame {
   // Continuous movement (desktop WASD/arrows): a held direction vector.
   handleSteer(id, dx, dy, run) {
     const p = this.players[id];
-    if (!p || p.state === 'out' || p.state === 'washed' || this.phase !== 'running') return;
+    if (!p || p.state === 'out' || p.state === 'washed' || p.inShop || this.phase !== 'running') return;
     const vx = Number(dx) || 0;
     const vy = Number(dy) || 0;
     const mag = Math.hypot(vx, vy);
@@ -363,7 +364,7 @@ class WaveRunnerGame {
 
   handleAction(id, type) {
     const p = this.players[id];
-    if (!p || p.state === 'out' || p.state === 'washed' || p.state === 'resting') return;
+    if (!p || p.state === 'out' || p.state === 'washed' || p.state === 'resting' || p.inShop) return;
     if (this.phase !== 'running') return;
     if (type === 'stand') {
       // Standing is a real recovery move, not just the idle default: bailing
@@ -436,7 +437,7 @@ class WaveRunnerGame {
 
   handleRest(id) {
     const p = this.players[id];
-    if (!p || p.state === 'out' || p.state === 'washed' || this.phase !== 'running') return;
+    if (!p || p.state === 'out' || p.state === 'washed' || p.inShop || this.phase !== 'running') return;
     if (p.state === 'resting') { p.state = 'idle'; return; }
     if (p.y >= this.waterline()) {
       p.state = 'resting';
@@ -454,7 +455,7 @@ class WaveRunnerGame {
 
   handleTapPowerup(id, powerupId) {
     const p = this.players[id];
-    if (!p || p.state === 'out' || p.state === 'washed' || this.phase !== 'running') return;
+    if (!p || p.state === 'out' || p.state === 'washed' || p.inShop || this.phase !== 'running') return;
     const pu = this.powerups.find(u => u.id === powerupId);
     if (!pu) return;
     // Tapping never grabs at range: it marks the item and walks the player
@@ -469,9 +470,42 @@ class WaveRunnerGame {
     }
   }
 
+  // The counter of the Bait & Tackle shop — every trade is an explicit
+  // request from the menu, acknowledged so the client can show errors.
+  handleShopAction(id, action) {
+    const p = this.players[id];
+    if (!p || this.phase !== 'running') return { success: false, error: 'Not right now' };
+    if (!p.inShop) return { success: false, error: 'You are not in the shop' };
+    const cfg = this.cfg;
+    if (action === 'buy-bait') {
+      if (p.bait > 0) return { success: false, error: 'Your bait pouch is full' };
+      if (p.score < cfg.baitCost) return { success: false, error: `Bait costs ${cfg.baitCost} ppts` };
+      p.score -= cfg.baitCost;
+      p.bait = 1;
+      this._emit({ type: 'bait-bought', playerId: id, cost: cfg.baitCost });
+      return { success: true };
+    }
+    if (action === 'sell-fish') {
+      if (p.fish === 0) return { success: false, error: 'Nothing to sell — soak some bait first' };
+      const points = p.fish * cfg.fishSellPoints;
+      p.score += points;
+      this._emit({ type: 'fish-sold', playerId: id, count: p.fish, points });
+      p.fish = 0;
+      return { success: true };
+    }
+    if (action === 'leave') {
+      p.inShop = false;
+      p.x = cfg.shopX;
+      p.y = cfg.shopY + 10;   // back out front, clear of the door zone
+      p.facing = 'down';
+      return { success: true };
+    }
+    return { success: false, error: 'The shopkeeper squints, puzzled' };
+  }
+
   handleShove(id) {
     const p = this.players[id];
-    if (!p || p.state !== 'idle' || this.phase !== 'running') return;
+    if (!p || p.state !== 'idle' || p.inShop || this.phase !== 'running') return;
     if (this.t < p.shoveReadyAt) return;
     // No shoving from under the water or under the sand.
     if (this._actionActive(p, 'dive') || this._actionActive(p, 'dig')
@@ -763,6 +797,9 @@ class WaveRunnerGame {
         p.hp = Math.min(this.cfg.maxHp, p.hp + this.cfg.restRegenPerSec * dt);
         continue;
       }
+
+      // Browsing the shop: parked indoors until they leave the counter.
+      if (p.inShop) continue;
 
       if (p.action && this.t > p.action.until) {
         if (p.action.type === 'vanish') {
@@ -1080,22 +1117,16 @@ class WaveRunnerGame {
     for (const p of this._alivePlayers()) {
       if (p.state === 'washed') continue;
 
-      // Shop: sell the catch, then restock a worm — once per visit.
-      const atShop = Math.hypot(p.x - cfg.shopX, p.y - cfg.shopY) <= cfg.shopRadius;
-      if (atShop && !p.atShop) {
-        if (p.fish > 0) {
-          const points = p.fish * cfg.fishSellPoints;
-          p.score += points;
-          this._emit({ type: 'fish-sold', playerId: p.id, count: p.fish, points });
-          p.fish = 0;
-        }
-        if (p.bait === 0 && p.score >= cfg.baitCost) {
-          p.score -= cfg.baitCost;
-          p.bait = 1;
-          this._emit({ type: 'bait-bought', playerId: p.id, cost: cfg.baitCost });
-        }
+      // The shop door: walk into it and you're brought inside. The rest
+      // of the beach day keeps ticking while you browse (see
+      // handleShopAction for the counter itself).
+      if (!p.inShop && p.state === 'idle' && !p.action
+          && Math.hypot(p.x - cfg.shopX, p.y - cfg.shopY) <= cfg.shopDoorRadius) {
+        p.inShop = true;
+        p.target = null;
+        p.steer = null;
+        this._emit({ type: 'shop-enter', playerId: p.id });
       }
-      p.atShop = atShop;
 
       // Fishing: a soaking worm lures a bite after a while in the water.
       if (p.bait > 0 && p.y < waterline && !this._actionActive(p, 'vanish')) {
@@ -1484,6 +1515,7 @@ class WaveRunnerGame {
         pail: !!p.pail,
         bait: p.bait,
         fish: p.fish,
+        inShop: !!p.inShop,
       })),
       waves: this.waves.map(w => ({
         id: w.id,

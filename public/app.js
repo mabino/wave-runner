@@ -223,6 +223,8 @@
     state.playing = false;
     GameRenderer.stop();
     Beach.stopMusic();
+    $('screen-game').classList.remove('shopping');
+    $('shop-menu').classList.add('hidden');
   }
 
   const WEATHER_ICON = { sunny: '☀️', cloudy: '⛅', storm: '⛈️' };
@@ -267,6 +269,23 @@
     if (state.diveMode !== onSand) {
       state.diveMode = onSand;
       setDiveButton(onSand);
+    }
+
+    // Inside the Bait & Tackle: swap the surf controls for the counter menu.
+    const shopping = !!me.inShop;
+    $('screen-game').classList.toggle('shopping', shopping);
+    const menu = $('shop-menu');
+    menu.classList.toggle('hidden', !shopping);
+    if (shopping) {
+      $('shop-ppts').textContent = `${me.score} ppts`;
+      const buy = $('shop-buy');
+      buy.disabled = me.bait > 0 || me.score < 10;
+      buy.textContent = me.bait > 0 ? '🪱 Bait pouch is full' : '🪱 Buy bait — 10 ppts';
+      const sell = $('shop-sell');
+      sell.disabled = me.fish === 0;
+      sell.textContent = me.fish > 0
+        ? `💰 Sell ${me.fish} fish — +${me.fish * 25} ppts`
+        : '💰 No fish to sell';
     }
 
     if (me.hp < state.lastHp && navigator.vibrate) navigator.vibrate(60);
@@ -382,6 +401,14 @@
     e.preventDefault();
     socket.emit('game:rest');
   });
+
+  // ── Bait & Tackle counter ──────────────────────────────────────────────
+  const shopAct = (action) => socket.emit('game:shop', { action }, (res) => {
+    if (res && !res.success && res.error) toast(res.error, 'warn');
+  });
+  $('shop-buy').addEventListener('click', () => shopAct('buy-bait'));
+  $('shop-sell').addEventListener('click', () => shopAct('sell-fish'));
+  $('shop-leave').addEventListener('click', () => shopAct('leave'));
 
   // ── Desktop keyboard: WASD / arrow keys steer continuously ─────────────
   const KEYMAP = {
@@ -672,6 +699,9 @@
         toast(mine
           ? '🌊 Swept out to sea… your beach day is over'
           : `🌊 ${snapName(ev.playerId)} was swept out to sea!`, 'danger');
+        break;
+      case 'shop-enter':
+        if (mine) Beach.sfx.pickup();   // the door chime
         break;
       case 'bait-bought':
         if (mine) { Beach.sfx.pickup(); toast(`🪱 Bait bought (−${ev.cost} ppts) — soak it in the surf`); }

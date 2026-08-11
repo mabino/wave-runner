@@ -218,6 +218,32 @@ input[type="text"]::placeholder { color: rgba(255,255,255,.45); }
 .ctl span { font-size: .68rem; font-weight: 700; letter-spacing: .04em; }
 .ctl .key-hint { font-size: .56rem; font-weight: 600; opacity: .55; }
 
+/* ── Bait & Tackle menu (shown while inside the shop) ────────────────── */
+#screen-game.shopping #controls { display: none; }
+.shop-menu {
+  position: absolute;
+  left: 50%;
+  bottom: max(14px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: min(340px, calc(100% - 24px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(4, 34, 51, .92);
+  border: 1px solid rgba(255, 255, 255, .2);
+  border-radius: 16px;
+  padding: 14px;
+  z-index: 25;
+}
+.shop-menu.hidden { display: none; }
+.shop-menu-head {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 700;
+  padding-bottom: 2px;
+}
+.shop-menu button:disabled { opacity: .45; cursor: default; }
+
 /* ── How-to-play overlay ─────────────────────────────────────────────── */
 #screen-home .panel { position: relative; }
 .help-btn {

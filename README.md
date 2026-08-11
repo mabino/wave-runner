@@ -73,12 +73,16 @@ keyboard setup is detected). Served at `binolabs.com/waves/`.
   the rip carries you to the top before the lifeguard arrives, you're
   **swept out to sea** and your beach day is over.
 - **The boardwalk**: scroll down past the back of the beach and walk up
-  onto the planks (no digging through them). The **🎣 Bait & Tackle**
-  shack trades on contact, once per visit: it buys your catch (25 ppts
-  per fish) and sells a worm of bait (10 ppts). Soak the bait by
-  standing in the water and something will bite within a dozen seconds;
-  a carried fish also buys off a **shark attack** — the shark takes the
-  fish and leaves you whole.
+  onto the planks (no digging through them). Walk into the doorway of
+  the **🎣 Bait & Tackle** storefront and you step inside — aisles of
+  beach sundries, a couple of regulars browsing, and the Skipper at the
+  counter. Trading is menu-driven: buy a worm of bait (10 ppts) or sell
+  your whole catch (25 ppts per fish), then head back out the door. The
+  beach day keeps playing out while you browse — other players, bullies
+  and all, carry on without you. Soak the bait by standing in the water
+  and something will bite within a dozen seconds; a carried fish also
+  buys off a **shark attack** — the shark takes the fish and leaves you
+  whole.
 - Scores are **Pleasant Points (ppts)** — waves, streaks, perfect reads,
   dive premiums, and scooped salps all pay into the same tally.
 - **Umbrella** (⛱️ button): stretch out in the shade beneath your umbrella

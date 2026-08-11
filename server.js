@@ -199,6 +199,12 @@ io.on('connection', (socket) => {
     room?.game?.handleTapPowerup(socket.id, id);
   });
 
+  socket.on('game:shop', ({ action } = {}, cb) => {
+    const room = roomManager.getRoomByPlayer(socket.id);
+    const result = room?.game?.handleShopAction(socket.id, action);
+    cb?.(result || { success: false, error: 'No game running' });
+  });
+
   socket.on('game:rematch', (...args) => {
     const cb = ackOf(...args);
     const room = roomManager.getRoomByPlayer(socket.id);

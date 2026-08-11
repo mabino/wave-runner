@@ -1621,17 +1621,61 @@ describe('storm flags and the Bait & Tackle shop', () => {
     expect(game.surfDanger()).toBe(3);           // even at 9 AM, slack tide
   });
 
-  test('the shop sells one worm per visit', () => {
+  test('walking into the doorway brings you inside the shop', () => {
     const game = makeGame();
     const p = addSwimmer(game, 'p1', game.cfg.shopY, game.cfg.shopX);
+    const events = run(game, 0.2);
+    expect(events.find(e => e.type === 'shop-enter')).toBeTruthy();
+    expect(p.inShop).toBe(true);
+    expect(game.snapshot().players[0].inShop).toBe(true);
+    // Beach inputs are ignored at the counter.
+    game.handleMove('p1', 50, 40);
+    game.handleAction('p1', 'jump');
+    run(game, 0.3);
+    expect(p.target).toBeNull();
+    expect(p.action).toBeNull();
+    expect(p.x).toBe(game.cfg.shopX);
+  });
+
+  test('the counter sells one worm at a time, with honest errors', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', game.cfg.shopY, game.cfg.shopX);
+    run(game, 0.2);                              // step inside
+    expect(game.handleShopAction('p1', 'buy-bait').success).toBe(false);   // broke
     p.score = 50;
-    const events = run(game, 0.3);
-    expect(events.find(e => e.type === 'bait-bought')).toBeTruthy();
+    expect(game.handleShopAction('p1', 'buy-bait').success).toBe(true);
     expect(p.bait).toBe(1);
     expect(p.score).toBe(50 - game.cfg.baitCost);
-    run(game, 2);                                // loitering doesn't re-buy
-    expect(p.bait).toBe(1);
+    expect(game.handleShopAction('p1', 'buy-bait').success).toBe(false);   // pouch full
     expect(p.score).toBe(50 - game.cfg.baitCost);
+  });
+
+  test('leaving the shop puts you back on the boardwalk, free to move', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', game.cfg.shopY, game.cfg.shopX);
+    run(game, 0.2);
+    expect(p.inShop).toBe(true);
+    expect(game.handleShopAction('p1', 'leave').success).toBe(true);
+    expect(p.inShop).toBe(false);
+    run(game, 0.3);                              // standing out front...
+    expect(p.inShop).toBe(false);                // ...does not re-enter
+    game.handleMove('p1', 60, 130);
+    run(game, 3);
+    expect(p.x).toBeCloseTo(60, 0);              // walking works again
+  });
+
+  test('the beach day keeps playing while someone is in the shop', () => {
+    const game = makeGame();
+    const shopper = addSwimmer(game, 'shopper', game.cfg.shopY, game.cfg.shopX);
+    const surfer = addSwimmer(game, 'surfer', 40, 60);
+    run(game, 0.2);
+    expect(shopper.inShop).toBe(true);
+    const before = game.t;
+    sendWave(game, 1, surfer.y - 4);
+    const events = run(game, 0.5);
+    expect(events.find(e => e.type === 'wave-result' && e.playerId === 'surfer')).toBeTruthy();
+    expect(game.t).toBeGreaterThan(before);      // the clock never stopped
+    expect(shopper.inShop).toBe(true);
   });
 
   test('soaked bait lures a fish — but only in the water', () => {
@@ -1666,15 +1710,17 @@ describe('storm flags and the Bait & Tackle shop', () => {
     expect(p.hp).toBe(100 - game.cfg.sharkDamage);
   });
 
-  test('the shop buys the catch, then restocks the worm', () => {
+  test('the counter buys the whole catch on request', () => {
     const game = makeGame();
     const p = addSwimmer(game, 'p1', game.cfg.shopY, game.cfg.shopX);
     p.fish = 2;
-    const events = run(game, 0.3);
-    const sale = events.find(e => e.type === 'fish-sold');
-    expect(sale).toMatchObject({ count: 2, points: 2 * game.cfg.fishSellPoints });
+    run(game, 0.2);                              // step inside
+    expect(game.handleShopAction('p1', 'sell-fish').success).toBe(true);
     expect(p.fish).toBe(0);
-    expect(p.bait).toBe(1);                      // restocked from the proceeds
-    expect(p.score).toBe(2 * game.cfg.fishSellPoints - game.cfg.baitCost);
+    expect(p.score).toBe(2 * game.cfg.fishSellPoints);
+    expect(game.handleShopAction('p1', 'sell-fish').success).toBe(false);   // sold out
+    // The counter refuses customers who aren't inside.
+    const outside = addSwimmer(game, 'p2', 40, 70);
+    expect(game.handleShopAction('p2', 'buy-bait').success).toBe(false);
   });
 });
