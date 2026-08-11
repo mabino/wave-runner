@@ -67,6 +67,12 @@ const DEFAULTS = {
   sunscreenHeal: 35,
   buffDurations: { bodysuit: 45, bodyboard: 20, blanket: 30 },
 
+  // Salps: harmless drifting tentacle-clusters worth Pleasant Points to
+  // anyone carrying a pail — except the odd one that is really a jellyfish
+  // whose cap sits just under the surface.
+  salpMinGap: 10,   salpMaxGap: 22,   salpTtl: 18,
+  salpPoints: 15,   salpJellyChance: 0.2,
+
   // Shove acquisition range in world units. Precise touch positioning is
   // hard, so the shover LUNGES to the nearest swimmer in this range and
   // connects on contact — the range is what you'd read as "near me".
@@ -118,6 +124,7 @@ class WaveRunnerGame {
     this.waves = [];
     this.powerups = [];
     this.hazards = [];                // sharks, jellyfish, crabs
+    this.salps = [];                  // collectible drifters (some disguised)
     this.gullRaid = null;             // a seagull eyeing a power-up
     this.events = [];
     this.seq = 0;
@@ -133,6 +140,7 @@ class WaveRunnerGame {
     this.nextJellyAt = this._rand(this.cfg.jellyMinGap, this.cfg.jellyMaxGap);
     this.nextCrabAt = this._rand(this.cfg.crabMinGap, this.cfg.crabMaxGap);
     this.nextGullAt = this._rand(this.cfg.gullMinGap, this.cfg.gullMaxGap);
+    this.nextSalpAt = this._rand(this.cfg.salpMinGap, this.cfg.salpMaxGap);
   }
 
   // ─── Setup ────────────────────────────────────────────────────────────────
@@ -183,6 +191,7 @@ class WaveRunnerGame {
       pendingPickup: null,
       washedUntil: 0,
       buffs: { bodysuit: 0, bodyboard: 0, blanket: 0 },
+      pail: false,                   // equipment, kept for the day
       shoveReadyAt: 0,
       outSince: null,
       whistled: false,
@@ -782,7 +791,11 @@ class WaveRunnerGame {
     if (this.pendingDropAt !== null && this.t >= this.pendingDropAt) {
       this.pendingDropAt = null;
       const r = this.rng();
-      const type = r < 0.35 ? 'sunscreen' : r < 0.6 ? 'bodyboard' : r < 0.8 ? 'bodysuit' : 'blanket';
+      const type = r < 0.3 ? 'sunscreen'
+        : r < 0.5 ? 'bodyboard'
+        : r < 0.65 ? 'bodysuit'
+        : r < 0.8 ? 'blanket'
+        : 'pail';
       const pu = {
         id: `p${this.seq++}`,
         type,
@@ -866,6 +879,42 @@ class WaveRunnerGame {
       }
     }
 
+    // Salps drift like jellyfish tentacles with no cap in sight — and one
+    // in five IS a jellyfish, cap hidden below the surface. Only players
+    // carrying a pail interact with them: scoop one for Pleasant Points, or
+    // discover the disguise the hard way.
+    if (this.t >= this.nextSalpAt) {
+      this.nextSalpAt = this.t + this._rand(cfg.salpMinGap, cfg.salpMaxGap);
+      this.salps.push({
+        id: `s${this.seq++}`,
+        x: this._rand(12, 88),
+        y: this._rand(cfg.deepY + 2, waterline - 8),
+        vx: this._rand(-1.2, 1.2), vy: this._rand(0.15, 0.5),
+        sting: this.rng() < cfg.salpJellyChance,
+        expiresAt: this.t + cfg.salpTtl,
+      });
+    }
+    for (const s of [...this.salps]) {
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+      if (s.x < 6 || s.x > 94) s.vx = -s.vx;
+      s.y = Math.min(s.y, waterline - 4);
+      for (const p of this._alivePlayers()) {
+        if (!p.pail || p.state === 'washed' || p.y >= waterline) continue;
+        if (this._dist(p, s) > cfg.pickupRadius) continue;
+        this.salps = this.salps.filter(u => u.id !== s.id);
+        if (s.sting) {
+          this._emit({ type: 'salp-sting', playerId: p.id });
+          this._applyDamage(p, cfg.jellyDamage, 'jelly');
+        } else {
+          p.score += cfg.salpPoints;
+          this._emit({ type: 'salp-collected', playerId: p.id, points: cfg.salpPoints });
+        }
+        break;
+      }
+    }
+    this.salps = this.salps.filter(s => this.t < s.expiresAt);
+
     for (const h of this.hazards) {
       h.x += h.vx * dt;
       h.y += h.vy * dt;
@@ -909,6 +958,8 @@ class WaveRunnerGame {
     this.powerups = this.powerups.filter(u => u.id !== pu.id);
     if (pu.type === 'sunscreen') {
       p.hp = Math.min(this.cfg.maxHp, p.hp + this.cfg.sunscreenHeal);
+    } else if (pu.type === 'pail') {
+      p.pail = true;   // equipment: kept for the rest of the day
     } else {
       p.buffs[pu.type] = this.t + this.cfg.buffDurations[pu.type];
     }
@@ -1005,9 +1056,17 @@ class WaveRunnerGame {
           bodyboard: Math.max(0, Math.round((p.buffs.bodyboard - this.t) * 10) / 10),
           blanket: Math.max(0, Math.round((p.buffs.blanket - this.t) * 10) / 10),
         },
+        pail: !!p.pail,
       })),
       waves: this.waves.map(w => ({ id: w.id, size: w.size, y: Math.round(w.y * 10) / 10, slope: w.slope || 0, wobble: w.wobble })),
       powerups: this.powerups.map(u => ({ id: u.id, type: u.type, x: u.x, y: u.y, ttl: Math.round((u.expiresAt - this.t) * 10) / 10 })),
+      // Deliberately no `sting` here: the client can never tell a salp from
+      // a disguised jellyfish — that IS the gamble.
+      salps: this.salps.map(s => ({
+        id: s.id,
+        x: Math.round(s.x * 10) / 10,
+        y: Math.round(s.y * 10) / 10,
+      })),
       hazards: this.hazards.map(h => ({
         id: h.id, kind: h.kind,
         x: Math.round(h.x * 10) / 10,

@@ -11,6 +11,7 @@ function makeGame(config = {}, rng = () => 0.5) {
   game.nextJellyAt = Infinity;
   game.nextCrabAt = Infinity;
   game.nextGullAt = Infinity;
+  game.nextSalpAt = Infinity;
   return game;
 }
 
@@ -1151,5 +1152,72 @@ describe('running cooldown', () => {
     game.handleSteer('p1', 1, 0, true);  // clear of the world edge, still held
     run(game, 3);                        // breather expires while held
     expect(game.snapshot().players[0].running).toBe(true);
+  });
+});
+
+describe('pails and salps', () => {
+  test('planes sometimes drop pails, and picking one up equips it for the day', () => {
+    const game = makeGame({}, () => 0.9);   // 0.9 drop roll → pail (and cloudy skies)
+    const p = addSwimmer(game, 'p1', 80, 50);
+    game.pendingDropAt = 0.05;
+    run(game, 0.2);
+    const pu = game.powerups[0];
+    expect(pu.type).toBe('pail');
+    p.x = pu.x;
+    p.y = pu.y;
+    run(game, 0.2);
+    expect(game.powerups).toHaveLength(0);
+    const me = game.snapshot().players[0];
+    expect(me.pail).toBe(true);
+    expect(me.buffs.bodysuit).toBe(0);   // equipment, not a timed buff
+  });
+
+  test('a pail-carrying swimmer scoops a salp for Pleasant Points', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 40, 50);
+    p.pail = true;
+    game.salps.push({ id: 'sa', x: 50, y: 40, vx: 0, vy: 0, sting: false, expiresAt: 1000 });
+    const events = run(game, 0.2);
+    const ev = events.find(e => e.type === 'salp-collected');
+    expect(ev).toBeTruthy();
+    expect(ev.points).toBe(game.cfg.salpPoints);
+    expect(p.score).toBe(game.cfg.salpPoints);
+    expect(game.salps).toHaveLength(0);
+  });
+
+  test('without a pail, salps drift by untouched', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 40, 50);
+    game.salps.push({ id: 'sa', x: 50, y: 40, vx: 0, vy: 0, sting: false, expiresAt: 1000 });
+    run(game, 0.3);
+    expect(game.salps).toHaveLength(1);
+    expect(p.score).toBe(0);
+  });
+
+  test('a disguised jellyfish stings the scooper instead of paying out', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 40, 50);
+    p.pail = true;
+    game.salps.push({ id: 'sa', x: 50, y: 40, vx: 0, vy: 0, sting: true, expiresAt: 1000 });
+    const events = run(game, 0.2);
+    expect(events.find(e => e.type === 'salp-sting')).toBeTruthy();
+    expect(p.hp).toBe(100 - game.cfg.jellyDamage);
+    expect(p.score).toBe(0);
+    expect(game.salps).toHaveLength(0);
+  });
+
+  test('snapshots never reveal which salps are jellyfish in disguise', () => {
+    const game = makeGame();
+    game.salps.push({ id: 'sa', x: 50, y: 40, vx: 0, vy: 0, sting: true, expiresAt: 1000 });
+    const snap = game.snapshot();
+    expect(snap.salps).toHaveLength(1);
+    expect('sting' in snap.salps[0]).toBe(false);
+  });
+
+  test('salps wash away after their time', () => {
+    const game = makeGame();
+    game.salps.push({ id: 'sa', x: 50, y: 40, vx: 0, vy: 0, sting: false, expiresAt: 1 });
+    run(game, 1.3);
+    expect(game.salps).toHaveLength(0);
   });
 });

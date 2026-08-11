@@ -338,6 +338,32 @@
     }
   }
 
+  // A salp: the wiggly tentacles of a jellyfish with no cap in sight —
+  // drawn with the exact strokes of the jellyfish tentacles, because
+  // whether a cap lurks under the surface is the whole gamble.
+  function drawSalp(s) {
+    const x = sx(s.x), y = sy(s.y);
+    const t = performance.now() / 1000;
+    const bob = Math.sin(t * 2.2 + s.x) * 2.5;
+    ctx.strokeStyle = 'rgba(255, 150, 190, .65)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = -1; i <= 1; i++) {
+      ctx.moveTo(x + i * 4, y + bob + 1);
+      ctx.quadraticCurveTo(x + i * 4 + Math.sin(t * 3 + i) * 3, y + bob + 7, x + i * 4, y + bob + 12);
+    }
+    ctx.stroke();
+  }
+
+  function lerpedSalps(br) {
+    if (!br || br.a === br.b) return ((br ? br.b : snap).salps) || [];
+    const prev = new Map((br.a.salps || []).map(s => [s.id, s]));
+    return (br.b.salps || []).map(s => {
+      const q = prev.get(s.id);
+      return q ? { ...s, x: lerp(q.x, s.x, br.f), y: lerp(q.y, s.y, br.f) } : s;
+    });
+  }
+
   function drawGull(g) {
     // Swoop from a per-raid entry point across the sky to the marked item,
     // accelerating into the dive.
@@ -373,7 +399,7 @@
     ctx.font = '17px system-ui';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const icon = { sunscreen: '🧴', bodysuit: '🦺', bodyboard: '🛹', blanket: '🧺' }[u.type] || '🎁';
+    const icon = { sunscreen: '🧴', bodysuit: '🦺', bodyboard: '🛹', blanket: '🧺', pail: '🪣' }[u.type] || '🎁';
     ctx.fillText(icon, x, y + bob + 1);
   }
 
@@ -443,6 +469,18 @@
       ctx.font = '12px system-ui';
       ctx.textAlign = 'center';
       ctx.fillText('💫', x, y - h * 0.6);
+    } else if (p.state === 'resting') {
+      // Stretched out in the shade beneath the umbrella, canopy in front.
+      ctx.fillStyle = 'rgba(90, 60, 20, .3)';
+      ctx.beginPath();
+      ctx.ellipse(x + w * 0.15, y + 8, h * 0.4, 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.translate(x + w * 0.15, y + 2);
+      ctx.rotate(Math.PI / 2);
+      ctx.drawImage(sprite, -w / 2, -h / 2, w, h);
+      ctx.rotate(-Math.PI / 2);
+      ctx.translate(-(x + w * 0.15), -(y + 2));
+      drawUmbrella(x - w * 0.45, y + 10, '#0aa5a0');
     } else if (inWater) {
       // Wading: lower half in the water.
       ctx.drawImage(sprite, 0, 0, sprite.width, 12, x - w / 2, y - h * 0.62, w, h * 0.69);
@@ -471,7 +509,16 @@
         ctx.globalAlpha = p.state === 'out' ? 0.35 : 1;
       }
       ctx.drawImage(sprite, x - w / 2, y - h * 0.75 + bob, w, h);
-      if (p.state === 'resting') drawUmbrella(x + w * 0.55, y + 6, '#0aa5a0');
+    }
+
+    // The pail rides near the hand of whoever carries it.
+    if (p.pail && p.state !== 'washed' && p.state !== 'resting'
+        && p.action !== 'dive' && p.action !== 'dig') {
+      const side = facing === 'left' ? -1 : 1;
+      ctx.font = '11px system-ui';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🪣', x + side * w * 0.62, y - (inWater ? h * 0.1 : h * 0.05) + bob);
     }
 
     ctx.restore();
@@ -568,6 +615,7 @@
     drawLifeguardTower(beachTop);
 
     for (const u of snap.powerups) drawPowerup(u);
+    for (const s of lerpedSalps(br)) drawSalp(s);
     for (const h of lerpedHazards(br)) drawHazard(h);
     if (snap.gull) drawGull(snap.gull);
 

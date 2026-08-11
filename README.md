@@ -37,13 +37,20 @@ keyboard setup is detected). Served at `binolabs.com/waves/`.
   strike — wait it out on the sand, or wear the body suit.
 - **Lifeguards** whistle anyone beyond the flags or too far out; linger and
   they haul you in with an HP penalty.
-- **Umbrella** (⛱️ button): sit out on the beach and slowly regain HP —
-  safe, but no points.
+- Scores are **Pleasant Points (ppts)** — waves, streaks, perfect reads,
+  dive premiums, and scooped salps all pay into the same tally.
+- **Umbrella** (⛱️ button): stretch out in the shade beneath your umbrella
+  and slowly regain HP — safe, but no Pleasant Points.
 - **Banner planes** pass overhead (propeller sound); tappable power-ups
   splash down: 🧴 sunscreen (+HP), 🦺 body suit (lightning immunity),
-  🛹 body board (ride any wave for a while), 🧺 beach blanket (shove-proof).
-  Tapping an item walks your beachgoer over — you must actually reach it
-  to pick it up.
+  🛹 body board (ride any wave for a while), 🧺 beach blanket (shove-proof),
+  🪣 pail (kept for the whole day, carried at your side). Tapping an item
+  walks your beachgoer over — you must actually reach it to pick it up.
+- **Salps** drift in the water: wiggly tentacle-clusters that look exactly
+  like a jellyfish with no cap. With a pail equipped, swim into one to
+  scoop it for bonus Pleasant Points — but about one in five is really a
+  jellyfish whose cap sits just below the surface, and scooping that one
+  stings. Without a pail they drift by harmlessly.
 - **Shove** (🫸 button): lunge at the nearest swimmer near you and knock
   them out of the water and back onto the beach — breaking their streak
   and chipping their HP — unless their beach blanket is spread out. Short

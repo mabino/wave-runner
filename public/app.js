@@ -241,12 +241,13 @@
     $('hp-bar').style.width = pct + '%';
     $('hp-bar').classList.toggle('low', pct <= 30);
     $('hp-label').textContent = me.hp;
-    $('hud-score').textContent = `${me.score} pts` + (me.streak > 1 ? ` · ${me.streak}🔥` : '');
+    $('hud-score').textContent = `${me.score} ppts` + (me.streak > 1 ? ` · ${me.streak}🔥` : '');
 
     const buffs = [];
     if (me.buffs.bodysuit > 0) buffs.push(`🦺 ${Math.ceil(me.buffs.bodysuit)}s`);
     if (me.buffs.bodyboard > 0) buffs.push(`🛹 ${Math.ceil(me.buffs.bodyboard)}s`);
     if (me.buffs.blanket > 0) buffs.push(`🧺 ${Math.ceil(me.buffs.blanket)}s`);
+    if (me.pail) buffs.push('🪣');
     if (me.runReadyIn > 0) buffs.push(`💨 ${Math.ceil(me.runReadyIn)}s`);
     $('hud-buffs').innerHTML = buffs.map(b => `<span class="buff-chip">${b}</span>`).join('');
 
@@ -461,7 +462,7 @@
 
     const best = tally.best;
     $('over-best').innerHTML = best
-      ? `🏆 Best on the Beach: ${esc(best.name)} — ${best.score} pts`
+      ? `🏆 Best on the Beach: ${esc(best.name)} — ${best.score} ppts`
       : 'Nobody survived the surf…';
 
     const table = $('over-table');
@@ -583,6 +584,7 @@
             bodysuit: '🦺 Body suit! Lightning-proof',
             bodyboard: '🛹 Body board! Ride anything',
             blanket: '🧺 Beach blanket! Shove-proof',
+            pail: '🪣 A pail! Scoop up salps for Pleasant Points',
           }[ev.powerupType];
           toast(label, 'warn');
         }
@@ -605,6 +607,16 @@
         break;
       case 'winded':
         if (mine) toast('💨 Winded — catch your breath');
+        break;
+      case 'salp-collected':
+        if (mine) {
+          Beach.sfx.pickup();
+          toast(`🎐 Salp scooped! +${ev.points} ppts`);
+          GameRenderer.addFloater(50, 50, `+${ev.points} ppts 🎐`, '#7be3a0');
+        }
+        break;
+      case 'salp-sting':
+        if (mine) { Beach.sfx.sting(); toast('🪼 That was no salp — stung!', 'danger'); }
         break;
       case 'shark':
         Beach.sfx.sharkAlert();
