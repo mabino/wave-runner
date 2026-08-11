@@ -255,7 +255,7 @@
     const onSand = me.y >= snap.flags.beachY;
     if (state.diveMode !== onSand) {
       state.diveMode = onSand;
-      $('btn-dive').innerHTML = onSand ? '🕳️<span>Dig</span>' : '🤿<span>Dive</span>';
+      setDiveButton(onSand);
     }
 
     if (me.hp < state.lastHp && navigator.vibrate) navigator.vibrate(60);
@@ -307,6 +307,35 @@
   $('game-canvas').addEventListener('pointerup', endHold);
   $('game-canvas').addEventListener('pointercancel', endHold);
 
+  // Best-effort desktop detection: a fine pointer that can hover almost
+  // always means a keyboard is present too.
+  const IS_DESKTOP = !!(window.matchMedia
+    && window.matchMedia('(hover: hover) and (pointer: fine)').matches);
+
+  const keyHint = (k) => IS_DESKTOP ? `<span class="key-hint">(${k})</span>` : '';
+
+  // The Dive button relabels to Dig on the sand, so its content (hint
+  // included) is rebuilt in one place.
+  function setDiveButton(onSand) {
+    $('btn-dive').innerHTML =
+      (onSand ? '🕳️<span>Dig</span>' : '🤿<span>Dive</span>') + keyHint('U');
+  }
+
+  if (IS_DESKTOP) {
+    $('btn-jump').insertAdjacentHTML('beforeend', keyHint('J'));
+    setDiveButton(false);
+    $('btn-stand').insertAdjacentHTML('beforeend', keyHint('N'));
+    $('btn-shove').insertAdjacentHTML('beforeend', keyHint('K'));
+    $('btn-rest').insertAdjacentHTML('beforeend', keyHint('R'));
+  }
+
+  // Flash the matching button so a keystroke gives the same feedback as a tap.
+  function pressBtn(id) {
+    const b = $(id);
+    b.classList.add('active');
+    setTimeout(() => b.classList.remove('active'), 130);
+  }
+
   function bindAction(btnId, type, sfx) {
     $(btnId).addEventListener('pointerdown', (e) => {
       e.preventDefault();
@@ -343,6 +372,23 @@
   const heldKeys = new Set();
   let shiftHeld = false;   // Shift + WASD/arrows = sprint
 
+  // Action hotkeys mirror the on-screen buttons (desktop only).
+  const HOTKEYS = {
+    KeyJ: () => { socket.emit('game:action', { type: 'jump' }); Beach.sfx.jump(); pressBtn('btn-jump'); },
+    KeyU: () => {
+      socket.emit('game:action', { type: 'dive' });
+      if (state.diveMode) Beach.sfx.dig(); else Beach.sfx.dive();
+      pressBtn('btn-dive');
+    },
+    KeyN: () => { socket.emit('game:action', { type: 'stand' }); pressBtn('btn-stand'); },
+    KeyK: () => {
+      if ($('btn-shove').disabled) return;   // honor the shove cooldown
+      socket.emit('game:shove');
+      pressBtn('btn-shove');
+    },
+    KeyR: () => { socket.emit('game:rest'); pressBtn('btn-rest'); },
+  };
+
   function sendSteer() {
     let dx = 0, dy = 0;
     for (const k of heldKeys) { dx += KEYMAP[k][0]; dy += KEYMAP[k][1]; }
@@ -351,9 +397,15 @@
 
   window.addEventListener('keydown', (e) => {
     if (!state.playing) return;
+    if (e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
     if (e.key === 'Shift' && !shiftHeld) {
       shiftHeld = true;
       if (heldKeys.size) sendSteer();
+      return;
+    }
+    if (IS_DESKTOP && HOTKEYS[e.code] && !e.repeat) {
+      e.preventDefault();
+      HOTKEYS[e.code]();
       return;
     }
     if (!KEYMAP[e.code] || e.repeat) return;

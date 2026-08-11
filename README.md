@@ -6,7 +6,9 @@ the lower third, lifeguards on patrol, weather rolling in.
 
 Playable on iPhone/iPad Safari in portrait or landscape (tap to walk,
 hold to run) and on desktop (tap, or WASD/arrow keys with Shift to
-sprint). Served at `binolabs.com/waves/`.
+sprint, plus action hotkeys — J jump, U dive/dig, N stand, K shove,
+R rest — shown as parenthetical hints on the buttons when a mouse-and-
+keyboard setup is detected). Served at `binolabs.com/waves/`.
 
 ## How it plays
 

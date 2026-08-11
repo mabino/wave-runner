@@ -216,6 +216,7 @@ input[type="text"]::placeholder { color: rgba(255,255,255,.45); }
   cursor: pointer;
 }
 .ctl span { font-size: .68rem; font-weight: 700; letter-spacing: .04em; }
+.ctl .key-hint { font-size: .56rem; font-weight: 600; opacity: .55; }
 .ctl:active, .ctl.active { background: #ff9f1c; border-color: #ff9f1c; color: #3a2200; }
 .ctl.rest.on { background: #0aa5a0; border-color: #0aa5a0; }
 
