@@ -171,6 +171,16 @@
       noiseBurst(0.5, 0.3, 1000, 0.05);
     },
     jump()  { blip('square', 330, 0.16, 0.1, 0, 660); },
+    combo(n) {
+      // Encore jumps ring higher with each link in the chain.
+      const base = 440 + Math.min(4, n) * 110;
+      blip('square', base, 0.1, 0.11, 0, base * 1.5);
+      blip('square', base * 1.25, 0.12, 0.1, 0.1);
+    },
+    shell() {
+      [659, 831, 988, 1319].forEach((f, i) => blip('triangle', f, 0.16, 0.13, i * 0.09));
+      blip('square', 1568, 0.35, 0.1, 0.4);
+    },
     dive()  { blip('sine', 500, 0.3, 0.12, 0, 160); noiseBurst(0.2, 0.12, 1800, 0.08, 'highpass'); },
     pickup(){ blip('square', 880, 0.08, 0.12); blip('square', 1320, 0.14, 0.12, 0.08); },
     zap()   { noiseBurst(0.15, 0.35, 5000, 0, 'highpass'); blip('sawtooth', 1600, 0.3, 0.2, 0.02, 90); },

@@ -103,6 +103,13 @@
     if (state.room) socket.emit('player:customize', { avatar: state.avatar });
   }
 
+  // ── How-to-play overlay ────────────────────────────────────────────────
+  $('btn-help').addEventListener('click', () => $('help-overlay').classList.remove('hidden'));
+  $('btn-help-close').addEventListener('click', () => $('help-overlay').classList.add('hidden'));
+  $('help-overlay').addEventListener('click', (e) => {
+    if (e.target === $('help-overlay')) $('help-overlay').classList.add('hidden');
+  });
+
   // ── Home screen ────────────────────────────────────────────────────────
   $('player-name').value = state.myName;
 
@@ -607,6 +614,27 @@
         break;
       case 'winded':
         if (mine) toast('💨 Winded — catch your breath');
+        break;
+      case 'jump-combo':
+        if (mine) {
+          Beach.sfx.combo(ev.combo);
+          GameRenderer.addFloater(50, 45, `✨ x${ev.combo}! +${ev.heal} HP`, '#ffd97b');
+        }
+        break;
+      case 'vanished':
+        if (mine) { Beach.sfx.dive(); toast('🫧 You slip beneath, out of sight…'); }
+        break;
+      case 'shell-found':
+        if (mine) {
+          Beach.sfx.shell();
+          toast(`🐚 A rare shell! +${ev.points} ppts`, 'warn');
+          GameRenderer.addFloater(50, 50, `🐚 +${ev.points} ppts`, '#ffd97b');
+        } else {
+          toast(`🐚 ${snapName(ev.playerId)} surfaced with a rare shell!`);
+        }
+        break;
+      case 'surfaced':
+        if (mine) toast('🫧 Nothing down there this time');
         break;
       case 'salp-collected':
         if (mine) {

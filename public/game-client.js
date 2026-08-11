@@ -163,10 +163,12 @@
     const foamH = 2 + w.size * 2.4;
     const amp = 1.5 + w.size * 1.3;
     const shadowH = w.size * 7;
+    // Fading waves thin out visibly as they run down to their endpoint.
+    const fadeA = w.fade !== undefined ? 0.25 + 0.75 * w.fade : 1;
     const yAt = (px) => sy(w.y + (w.slope || 0) * ((px / W) * 100 - 50));
 
     // Shadow the face of the wave (approaching mass), following the tilt.
-    ctx.fillStyle = `rgba(8, 44, 66, ${0.10 + w.size * 0.07})`;
+    ctx.fillStyle = `rgba(8, 44, 66, ${(0.10 + w.size * 0.07) * fadeA})`;
     ctx.beginPath();
     ctx.moveTo(0, yAt(0) - shadowH);
     for (let x = 0; x <= W; x += 16) ctx.lineTo(x, yAt(x) - shadowH);
@@ -182,12 +184,12 @@
     }
     for (let x = W; x >= 0; x -= 12) ctx.lineTo(x, yAt(x) + foamH + 4);
     ctx.closePath();
-    ctx.fillStyle = `rgba(255,255,255,${0.55 + w.size * 0.12})`;
+    ctx.fillStyle = `rgba(255,255,255,${(0.55 + w.size * 0.12) * fadeA})`;
     ctx.fill();
 
     // Whitecap flecks on big sets.
     if (w.size >= 2) {
-      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      ctx.fillStyle = `rgba(255,255,255,${0.8 * fadeA})`;
       for (let x = ((w.wobble * 97) % 40); x < W; x += 40) {
         ctx.fillRect(x + Math.sin(t * 3 + x) * 4, yAt(x) - 2 - w.size, 5, 2);
       }
@@ -435,18 +437,47 @@
     const x = sx(p.x), y = sy(p.y);
     const bob = walking ? -Math.abs(Math.sin(phase * Math.PI * 2)) * scale * 0.5 : 0;
 
+    // Deep search: the player is off the playfield entirely. Only their
+    // own screen shows a faint ripple so they don't lose themselves.
+    if (p.action === 'vanish') {
+      if (p.id === myId) {
+        ctx.strokeStyle = 'rgba(255,255,255,.35)';
+        ctx.lineWidth = 1.5;
+        const rip2 = (performance.now() / 300) % 2;
+        ctx.beginPath();
+        ctx.ellipse(x, y, 6 + rip2 * 5, 2.5 + rip2 * 2, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      return;
+    }
+
     ctx.save();
     ctx.imageSmoothingEnabled = false;
 
     if (p.state === 'out') ctx.globalAlpha = 0.35;
 
     if (p.action === 'jump') {
-      // Airborne: shadow stays, sprite lifts.
+      // Airborne: shadow stays, sprite lifts. Encore jumps show off —
+      // higher air, and a rotating pose cycle (lift, corkscrew, starfish).
+      const combo = Math.max(1, p.jumpCombo || 1);
+      const pose = (combo - 1) % 3;
+      const lift = 0.95 + 0.12 * Math.min(3, combo - 1);
       ctx.fillStyle = 'rgba(0,0,0,.25)';
       ctx.beginPath();
       ctx.ellipse(x, y + h * 0.32, w * 0.4, 4, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.drawImage(sprite, x - w / 2, y - h * 0.95, w, h);
+      ctx.save();
+      ctx.translate(x, y - h * lift + h / 2);
+      if (pose === 1) ctx.rotate((performance.now() / 90) % (Math.PI * 2));
+      else if (pose === 2) ctx.rotate(Math.sin(performance.now() / 110) * 0.4);
+      const pw = pose === 2 ? w * 1.25 : w;
+      ctx.drawImage(sprite, -pw / 2, -h / 2, pw, h);
+      ctx.restore();
+      if (combo >= 2) {
+        ctx.font = '10px system-ui';
+        ctx.textAlign = 'center';
+        ctx.fillText('✨', x + w * 0.6, y - h * lift);
+      }
     } else if (p.action === 'dive') {
       // Under the surface: just a hint of the body + ripples.
       ctx.globalAlpha *= 0.45;

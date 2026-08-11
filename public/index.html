@@ -13,6 +13,7 @@
   <!-- ── Home: name, avatar, create/join ─────────────────────────────── -->
   <section id="screen-home" class="screen active">
     <div class="panel">
+      <button id="btn-help" class="help-btn" aria-label="How to play">?</button>
       <h1 class="title">🌊 Wave Runner</h1>
       <p class="tagline">Survive the surf until sundown</p>
 
@@ -40,6 +41,24 @@
       <div id="home-error" class="error hidden"></div>
     </div>
   </section>
+
+  <!-- ── How to play (the basics, not the whole almanac) ─────────────── -->
+  <div id="help-overlay" class="help-overlay hidden">
+    <div class="help-card">
+      <h2>🌊 How to Play</h2>
+      <ul class="help-list">
+        <li>🏖️ Survive the beach day, 9 AM to 7 PM. Run out of HP and you're out.</li>
+        <li>👟 Tap the beach to walk there — <b>hold</b> to run (tiring!). Desktop: WASD/arrows, Shift to sprint.</li>
+        <li>🌊 Read the surf: ripples are safe to stand through, rollers need a timed <b>Jump</b> or <b>Dive</b>, and the big thumpers demand a <b>Dive</b>.</li>
+        <li>🏆 Riding waves earns <b>Pleasant Points</b> — streaks, sharp timing, and dives pay extra.</li>
+        <li>⛱️ <b>Rest</b> under your umbrella to slowly heal. Safe, but no points.</li>
+        <li>✈️ Planes drop power-ups. Walk over an item to grab it before a gull does.</li>
+        <li>🫸 <b>Shove</b> rivals out of the water — or punt a crab on the sand.</li>
+        <li>🚩 Mind the lifeguard flags, storms, wildlife, and rip currents (swim sideways to escape a rip).</li>
+      </ul>
+      <button id="btn-help-close" class="btn primary">Got it</button>
+    </div>
+  </div>
 
   <!-- ── Lobby ───────────────────────────────────────────────────────── -->
   <section id="screen-lobby" class="screen">

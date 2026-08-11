@@ -23,11 +23,23 @@ keyboard setup is detected). Served at `binolabs.com/waves/`.
   about 2.5 s before you're winded (💨 in the HUD) and need a ~3 s
   breather; keep holding and you'll surge again the moment it passes.
   NPCs never run.
-- **Waves** roll in from the top with subtle visual tells (foam height, face
-  shadow): ripples are safe standing, rollers need a timed **jump** or
-  **dive**, thumpers demand a **dive**. Mistime it and you're washed up on
-  the sand with less HP. Diving costs a sliver of HP (never lethal) but
-  pays a scoring premium when it lands.
+- **Waves** are born at the far horizon — above even the deepest swimmer,
+  so nothing ever pops up beneath you — and roll in with subtle visual
+  tells (foam height, face shadow): ripples are safe standing, rollers
+  need a timed **jump** or **dive**, thumpers demand a **dive**. Mistime
+  it and you're washed up on the sand with less HP. Diving costs a sliver
+  of HP (never lethal) but pays a scoring premium when it lands.
+- **Not every wave goes the distance**: some pick an endpoint short of the
+  sand and visibly thin out as they run down to it, dropping a size class
+  (or two) along the way — a distant thumper may arrive as a mere roller.
+  The strong ones hold full power all the way to the beach.
+- **Encore jumps**: chain jumps back-to-back and the avatar starts showing
+  off — new poses (corkscrew, starfish), extra hangtime, and a sliver of
+  HP from the crowd's approval per encore.
+- **Deep search**: a third quick **Dive** (or **Dig**) in a row takes you
+  clean off the playfield for a few seconds — invisible and untouchable —
+  and sometimes you surface clutching a **rare shell** worth a big pile
+  of Pleasant Points.
 - **Tide**: the waterline breathes through the day — high tide eats the
   beach and speeds up the surf; low tide exposes sand and slows it. The
   HUD shows the tide direction, and waves arrive at gradually drifting
@@ -91,6 +103,8 @@ keyboard setup is detected). Served at `binolabs.com/waves/`.
   reach — though their reach is half a human's lunge.
 - A player is out when their HP hits zero. The game ends when everyone is
   out or the clock hits 7 PM; the tally crowns the **Best on the Beach**.
+- A **?** button on the setup screen opens a quick how-to-play card with
+  the basics.
 
 All audio (surf, seagulls, whistle, thunder, plane, jaunty summer chiptune)
 is synthesized with WebAudio — no assets.

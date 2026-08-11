@@ -1403,3 +1403,118 @@ describe('open ocean, crab shoves and rip fade', () => {
     expect(game.snapshot().rip.strength).toBeLessThan(0.5);   // dying down
   });
 });
+
+describe('encore jumps and the deep search', () => {
+  test('chained jumps grow hangtime and give back a little HP', () => {
+    const game = makeGame();
+    const p = addSwimmer(game);
+    p.hp = 80;
+    game.handleAction('p1', 'jump');
+    const firstDur = p.action.until - p.action.startedAt;
+    expect(p.hp).toBe(80);                       // first jump: no encore yet
+    run(game, firstDur + game.cfg.actionCooldown + 0.1);
+    game.handleAction('p1', 'jump');             // well inside the combo window
+    const events = game.tick(0.05);
+    const secondDur = p.action.until - p.action.startedAt;
+    expect(secondDur).toBeGreaterThan(firstDur);
+    expect(p.hp).toBe(80 + game.cfg.jumpComboHeal);
+    expect(events.find(e => e.type === 'jump-combo')).toMatchObject({ combo: 2 });
+    expect(game.snapshot().players[0].jumpCombo).toBe(2);
+  });
+
+  test('the encore lapses if you dawdle between jumps', () => {
+    const game = makeGame();
+    const p = addSwimmer(game);
+    p.hp = 80;
+    game.handleAction('p1', 'jump');
+    run(game, 3.5);                              // combo window long gone
+    game.handleAction('p1', 'jump');
+    expect(p.jumpCombo).toBe(1);
+    expect(p.hp).toBe(80);
+  });
+
+  test('a third quick burrow vanishes the player from the playfield', () => {
+    const game = makeGame();
+    const p = addSwimmer(game);
+    game.handleAction('p1', 'dive');
+    run(game, 2);
+    game.handleAction('p1', 'dive');
+    run(game, 2);
+    game.handleAction('p1', 'dive');             // third in the chain
+    const events = game.tick(0.05);
+    expect(p.action.type).toBe('vanish');
+    expect(events.find(e => e.type === 'vanished')).toBeTruthy();
+
+    // Off the playfield: unshovable, untouched by waves, immobile.
+    const q = addSwimmer(game, 'q1', p.y, p.x + 3);
+    game.handleShove('q1');
+    const shoveEvents = game.tick(0.05);
+    expect(shoveEvents.find(e => e.type === 'shove-miss')).toBeTruthy();
+    sendWave(game, 3, p.y - 4);
+    game.handleSteer('p1', 1, 0);
+    const xBefore = p.x;
+    const waveEvents = run(game, 0.4);
+    expect(waveEvents.find(e => e.type === 'wave-result' && e.playerId === 'p1')).toBeUndefined();
+    expect(p.x).toBe(xBefore);
+  });
+
+  test('surfacing can produce a rare shell…', () => {
+    const game = makeGame({}, () => 0.2);        // shell roll: 0.2 < shellChance
+    game.hours = game.hours.map(() => 'sunny');
+    const p = addSwimmer(game);
+    p.action = { type: 'vanish', startedAt: 0, until: 0.5 };
+    const events = run(game, 1);
+    const shell = events.find(e => e.type === 'shell-found');
+    expect(shell).toBeTruthy();
+    expect(p.score).toBe(game.cfg.shellPoints);
+  });
+
+  test('…or come up empty-handed', () => {
+    const game = makeGame();                     // 0.5 ≥ shellChance
+    const p = addSwimmer(game);
+    p.action = { type: 'vanish', startedAt: 0, until: 0.5 };
+    const events = run(game, 1);
+    expect(events.find(e => e.type === 'surfaced')).toBeTruthy();
+    expect(p.score).toBe(0);
+  });
+});
+
+describe('wave endpoints and intensity gradient', () => {
+  test('waves spawn at the far horizon, above the deepest swimmer', () => {
+    const game = makeGame();
+    game.nextWaveAt = 0.05;
+    run(game, 0.2);
+    expect(game.waves.length).toBeGreaterThan(0);
+    expect(game.waves[0].y).toBeLessThan(game.cfg.waveSpawnY + 5);
+    expect(game.cfg.waveSpawnY).toBeLessThan(game.cfg.outerY - 14);
+  });
+
+  test('some waves die before they reach the beach', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 50, 50);
+    game.waves.push({ id: 'fader', size: 2, y: 30, endY: 42, slope: 0, wobble: 0, resolved: new Set() });
+    const events = run(game, 3);
+    expect(events.find(e => e.type === 'wave-result')).toBeUndefined();
+    expect(game.waves.find(w => w.id === 'fader')).toBeUndefined();
+    expect(p.hp).toBe(100);
+  });
+
+  test('a fading thumper arrives as something smaller', () => {
+    const game = makeGame();
+    addSwimmer(game, 'p1', 48, 50);
+    game.waves.push({ id: 'fading', size: 3, y: 44, endY: 60, slope: 0, wobble: 0, resolved: new Set() });
+    game.handleAction('p1', 'jump');             // a jump only survives size <= 2
+    const events = run(game, 0.3);
+    const res = events.find(e => e.type === 'wave-result');
+    expect(res.outcome).toBe('ride');
+    expect(res.size).toBeLessThan(3);
+  });
+
+  test('snapshots report the faded size and a fade factor', () => {
+    const game = makeGame();
+    game.waves.push({ id: 'w1', size: 3, y: 55, endY: 60, slope: 0, wobble: 0, resolved: new Set() });
+    const w = game.snapshot().waves[0];
+    expect(w.size).toBe(2);
+    expect(w.fade).toBeCloseTo(0.42, 1);
+  });
+});

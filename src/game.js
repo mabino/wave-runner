@@ -32,8 +32,12 @@ const DEFAULTS = {
   waveSlopeStep: 0.05,      // per-wave drift of the approach angle
   waveSlopeCap: 0.1,        // extra slope allowance earned across the day
 
-  waveIntervalMin: 3.5,     // seconds between wave spawns
-  waveIntervalMax: 7,
+  waveIntervalMin: 3,       // seconds between wave spawns (a touch denser now
+  waveIntervalMax: 6,       // that some waves die before reaching the shore)
+  waveSpawnY: -100,         // waves are born at the far horizon, above even
+                            // the deepest swimmer — nothing pops up beneath you
+  waveStrongChance: 0.55,   // share of waves that hold full power to the sand
+  waveFadeLen: 30,          // fading waves lose intensity over this run-out
   hitRange: 3,              // wave front proximity that triggers resolution
 
   jumpDuration: 0.65,       // airtime seconds — snappy, not floaty
@@ -42,6 +46,23 @@ const DEFAULTS = {
   diveHpCost: 2,            // diving is tiring...
   diveRideBonus: 5,         // ...but pays better when it lands
   digDuration: 2,           // seconds buried when "diving" on the sand
+
+  // Encore jumps: chain jumps back-to-back and the avatar starts showing
+  // off — new poses, a touch more hangtime, and the crowd's approval as a
+  // sliver of HP per encore.
+  jumpComboGap: 2,          // start-to-start window that keeps the combo alive
+  jumpComboMax: 4,
+  jumpComboAir: 0.15,       // extra hangtime per combo step
+  jumpComboHeal: 2,
+
+  // Deep search: a third quick dive/dig in a row takes the player right
+  // off the playfield for a few seconds — and sometimes they come back
+  // up clutching a rare shell.
+  burrowComboGap: 3,        // dive/dig chain window (start-to-start)
+  burrowComboTrigger: 3,
+  vanishDuration: 3,
+  shellChance: 0.35,
+  shellPoints: 75,
 
   walkSpeed: 16,            // units/sec on sand
   swimSpeed: 10,            // units/sec in water
@@ -199,6 +220,10 @@ class WaveRunnerGame {
       runReadyAt: 0,
       action: null,                  // { type, startedAt, until }
       cooldownUntil: 0,
+      jumpCombo: 0,
+      lastJumpAt: null,
+      burrowCombo: 0,
+      lastBurrowAt: null,
       target: null,
       steer: null,                   // held-key direction vector
       pendingRest: false,
@@ -322,7 +347,46 @@ class WaveRunnerGame {
     }
     if (type !== 'jump' && type !== 'dive') return;
     if (this.t < p.cooldownUntil) return;
-    if (type === 'dive' && p.y >= this.waterline()) {
+
+    if (type === 'jump') {
+      p.burrowCombo = 0;
+      // Encore jumps: chain them and the hangtime grows with the showing-off.
+      p.jumpCombo = (p.lastJumpAt !== null && this.t - p.lastJumpAt <= this.cfg.jumpComboGap)
+        ? Math.min(this.cfg.jumpComboMax, p.jumpCombo + 1)
+        : 1;
+      p.lastJumpAt = this.t;
+      const dur = this.cfg.jumpDuration * (1 + this.cfg.jumpComboAir * (p.jumpCombo - 1));
+      if (p.jumpCombo >= 2) {
+        p.hp = Math.min(this.cfg.maxHp, p.hp + this.cfg.jumpComboHeal);
+        this._emit({ type: 'jump-combo', playerId: id, combo: p.jumpCombo, heal: this.cfg.jumpComboHeal });
+      }
+      p.action = { type, startedAt: this.t, until: this.t + dur };
+      p.cooldownUntil = p.action.until + this.cfg.actionCooldown;
+      return;
+    }
+
+    // Dive — and dig, its on-sand cousin. Chaining either in quick
+    // succession goes deeper: the third burrow takes the player clean off
+    // the playfield, and sometimes they surface with a rare shell.
+    p.jumpCombo = 0;
+    const onSand = p.y >= this.waterline();
+    p.burrowCombo = (p.lastBurrowAt !== null && this.t - p.lastBurrowAt <= this.cfg.burrowComboGap)
+      ? p.burrowCombo + 1
+      : 1;
+    p.lastBurrowAt = this.t;
+
+    if (p.burrowCombo >= this.cfg.burrowComboTrigger) {
+      p.burrowCombo = 0;
+      if (!onSand) p.hp = Math.max(1, p.hp - this.cfg.diveHpCost);
+      p.action = { type: 'vanish', startedAt: this.t, until: this.t + this.cfg.vanishDuration };
+      p.cooldownUntil = p.action.until + this.cfg.actionCooldown;
+      p.target = null;
+      p.steer = null;
+      this._emit({ type: 'vanished', playerId: id });
+      return;
+    }
+
+    if (onSand) {
       // On the sand, diving becomes digging in: a brief burrow that shrugs
       // off shoves, crab pinches, and lightning. Free, but you can't move.
       p.action = { type: 'dig', startedAt: this.t, until: this.t + this.cfg.digDuration };
@@ -331,10 +395,10 @@ class WaveRunnerGame {
       p.steer = null;
       return;
     }
-    const dur = type === 'jump' ? this.cfg.jumpDuration : this.cfg.diveDuration;
+
     // Exertion: each dive costs a little HP, but never knocks a player out.
-    if (type === 'dive') p.hp = Math.max(1, p.hp - this.cfg.diveHpCost);
-    p.action = { type, startedAt: this.t, until: this.t + dur };
+    p.hp = Math.max(1, p.hp - this.cfg.diveHpCost);
+    p.action = { type: 'dive', startedAt: this.t, until: this.t + this.cfg.diveDuration };
     p.cooldownUntil = p.action.until + this.cfg.actionCooldown;
   }
 
@@ -378,7 +442,8 @@ class WaveRunnerGame {
     if (!p || p.state !== 'idle' || this.phase !== 'running') return;
     if (this.t < p.shoveReadyAt) return;
     // No shoving from under the water or under the sand.
-    if (this._actionActive(p, 'dive') || this._actionActive(p, 'dig')) return;
+    if (this._actionActive(p, 'dive') || this._actionActive(p, 'dig')
+        || this._actionActive(p, 'vanish')) return;
 
     const waterline = this.waterline();
     const reach = p.npc ? this.cfg.npcShoveRadius : this.cfg.shoveRadius;
@@ -391,7 +456,8 @@ class WaveRunnerGame {
     let best = reach;
     for (const q of this._alivePlayers()) {
       if (q.id === id || q.state === 'washed' || q.y >= waterline) continue;
-      if (this._actionActive(q, 'dive') || this._actionActive(q, 'dig')) continue;
+      if (this._actionActive(q, 'dive') || this._actionActive(q, 'dig')
+          || this._actionActive(q, 'vanish')) continue;
       const d = this._dist(p, q);
       if (d <= best) { best = d; target = q; }
     }
@@ -499,6 +565,8 @@ class WaveRunnerGame {
   _washAshore(p, clampX = null) {
     if (clampX) p.x = Math.max(clampX[0], Math.min(clampX[1], p.x));
     p.y = Math.min(90, this.waterline() + 8);
+    p.jumpCombo = 0;
+    p.burrowCombo = 0;
     p.state = 'washed';
     p.washedUntil = this.t + this.cfg.washStunSec;
     p.target = null;
@@ -530,10 +598,15 @@ class WaveRunnerGame {
       const cap = 0.03 + this.cfg.waveSlopeCap * dayFrac;
       this.waveSlope = Math.max(-cap, Math.min(cap,
         this.waveSlope + this._rand(-this.cfg.waveSlopeStep, this.cfg.waveSlopeStep)));
+      // Stamina: strong waves hold full intensity all the way to the sand;
+      // the rest pick an endpoint — possibly far short of the beach — and
+      // fade out as they run down to it.
+      const strong = this.rng() < this.cfg.waveStrongChance;
       this.waves.push({
         id: `w${this.seq++}`,
         size,
-        y: 0,
+        y: this.cfg.waveSpawnY,
+        endY: strong ? null : this._rand(this.cfg.deepY - 20, this.cfg.beachY - 6),
         slope: this.waveSlope,              // front tilt: dy per dx from center
         wobble: this.rng() * Math.PI * 2,   // client-side rendering phase
         resolved: new Set(),
@@ -547,6 +620,15 @@ class WaveRunnerGame {
     return w.y + (w.slope || 0) * (x - 50);
   }
 
+  // A fading wave's intensity drops as it runs down to its endpoint;
+  // strong waves (endY null) never lose a step.
+  _waveEffectiveSize(w) {
+    if (!w.endY) return w.size;
+    const fadeLen = this.cfg.waveFadeLen;
+    const t = Math.max(0, Math.min(1, (w.y - (w.endY - fadeLen)) / fadeLen));
+    return Math.max(1, w.size - (t > 0.45 ? 1 : 0) - (t > 0.9 ? 1 : 0));
+  }
+
   _advanceWaves(dt) {
     const waterline = this.waterline();
     // High tide runs faster surf; low tide drags it.
@@ -555,6 +637,7 @@ class WaveRunnerGame {
       w.y += WAVE_TYPES[w.size].speed * speedFactor * dt;
       for (const p of this._alivePlayers()) {
         if (p.y >= waterline) continue;                // on the sand — safe
+        if (this._actionActive(p, 'vanish')) continue; // off the playfield
         if (w.resolved.has(p.id)) continue;
         if (this._waveFrontY(w, p.x) >= p.y - this.cfg.hitRange) {
           w.resolved.add(p.id);
@@ -562,18 +645,24 @@ class WaveRunnerGame {
         }
       }
     }
-    // A tilted wave is fully broken once its trailing edge passes the sand.
-    this.waves = this.waves.filter(w => w.y - Math.abs(w.slope || 0) * 50 < this.waterline());
+    // A wave is spent once its trailing edge passes the sand — or its own
+    // endpoint, for the ones that die offshore.
+    const sand = this.waterline();
+    this.waves = this.waves.filter(w =>
+      w.y - Math.abs(w.slope || 0) * 50 < Math.min(w.endY ?? sand, sand));
   }
 
   _resolveWave(w, p) {
-    const spec = WAVE_TYPES[w.size];
+    // What hits the player is the wave as it is HERE — a faded thumper may
+    // arrive as a mere roller or ripple.
+    const size = this._waveEffectiveSize(w);
+    const spec = WAVE_TYPES[size];
     const boarding = this.t < p.buffs.bodyboard;
     const act = p.action && this.t <= p.action.until ? p.action : null;
     const survives = boarding
-      || w.size === 1
-      || (w.size === 2 && act && (act.type === 'jump' || act.type === 'dive'))
-      || (w.size === 3 && act && act.type === 'dive');
+      || size === 1
+      || (size === 2 && act && (act.type === 'jump' || act.type === 'dive'))
+      || (size === 3 && act && act.type === 'dive');
 
     if (survives) {
       // Timing quality: acting in the first 60% of the window is a clean read
@@ -585,12 +674,12 @@ class WaveRunnerGame {
       p.bestStreak = Math.max(p.bestStreak, p.streak);
       p.wavesRidden += 1;
       p.score += spec.points + 2 * (p.streak - 1) + (perfect ? 5 : 0) + diveBonus;
-      this._emit({ type: 'wave-result', playerId: p.id, outcome: 'ride', size: w.size, perfect, streak: p.streak });
+      this._emit({ type: 'wave-result', playerId: p.id, outcome: 'ride', size, perfect, streak: p.streak });
     } else {
       p.streak = 0;
       // Wiped out: washed up on the sand to sit it out for a moment.
       this._washAshore(p);
-      this._emit({ type: 'wave-result', playerId: p.id, outcome: 'wiped', size: w.size });
+      this._emit({ type: 'wave-result', playerId: p.id, outcome: 'wiped', size });
       this._applyDamage(p, spec.damage, 'wave');
     }
   }
@@ -622,10 +711,21 @@ class WaveRunnerGame {
         continue;
       }
 
-      if (p.action && this.t > p.action.until) p.action = null;
+      if (p.action && this.t > p.action.until) {
+        if (p.action.type === 'vanish') {
+          // Back from the deep — sometimes with treasure in hand.
+          if (this.rng() < this.cfg.shellChance) {
+            p.score += this.cfg.shellPoints;
+            this._emit({ type: 'shell-found', playerId: p.id, points: this.cfg.shellPoints });
+          } else {
+            this._emit({ type: 'surfaced', playerId: p.id });
+          }
+        }
+        p.action = null;
+      }
 
-      // Buried players stay put until they surface.
-      if (this._actionActive(p, 'dig')) continue;
+      // Buried and vanished players stay put until they surface.
+      if (this._actionActive(p, 'dig') || this._actionActive(p, 'vanish')) continue;
 
       const wasX = p.x;
       const wasY = p.y;
@@ -707,7 +807,8 @@ class WaveRunnerGame {
         let threat = null;
         let soonest = Infinity;
         for (const w of this.waves) {
-          if (w.resolved.has(p.id) || w.size === 1) continue;
+          if (w.resolved.has(p.id) || this._waveEffectiveSize(w) === 1) continue;
+          if (w.endY && w.endY < p.y - this.cfg.hitRange) continue;   // dies short of them
           const gap = (p.y - this.cfg.hitRange) - this._waveFrontY(w, p.x);
           if (gap <= 0) continue;
           const eta = gap / (WAVE_TYPES[w.size].speed * speedFactor);
@@ -715,7 +816,8 @@ class WaveRunnerGame {
         }
         if (threat && soonest <= 0.45) {
           if (this.rng() < p.npc.skill) {
-            this.handleAction(p.id, threat.size === 3 || this.rng() < 0.5 ? 'dive' : 'jump');
+            this.handleAction(p.id,
+              this._waveEffectiveSize(threat) === 3 || this.rng() < 0.5 ? 'dive' : 'jump');
           } else if (this.rng() < 0.4) {
             this.handleAction(p.id, 'jump');   // panic jump — fatal vs thumpers
           }
@@ -774,6 +876,8 @@ class WaveRunnerGame {
 
   _lifeguard(dt) {
     for (const p of this._alivePlayers()) {
+      // Nobody can see a vanished player — the lifeguard included.
+      if (this._actionActive(p, 'vanish')) { p.outSince = null; p.whistled = false; continue; }
       const inWater = p.y < this.waterline();
       const outOfBounds = inWater &&
         (p.x < this.cfg.flagMinX || p.x > this.cfg.flagMaxX || p.y < this.cfg.outerY);
@@ -819,7 +923,8 @@ class WaveRunnerGame {
     if (!this.pendingStrike && this.t >= this.nextLightningAt) {
       const waterline = this.waterline();
       const swimmers = this._alivePlayers()
-        .filter(p => p.y < waterline && !this._actionActive(p, 'dig'));
+        .filter(p => p.y < waterline && !this._actionActive(p, 'dig')
+          && !this._actionActive(p, 'vanish'));
       let x, y;
       if (swimmers.length && this.rng() < 0.8) {
         const near = swimmers[Math.floor(this.rng() * swimmers.length)];
@@ -845,6 +950,7 @@ class WaveRunnerGame {
       const victims = this._alivePlayers().filter(p =>
         p.y < waterline
         && !this._actionActive(p, 'dig')
+        && !this._actionActive(p, 'vanish')
         && Math.hypot(p.x - x, p.y - y) <= this.cfg.lightningRadius);
       if (victims.length === 0) {
         this._emit({ type: 'lightning', playerId: null, x, y });
@@ -891,6 +997,7 @@ class WaveRunnerGame {
     const waterline = this.waterline();
     for (const p of this._alivePlayers()) {
       if (p.state === 'washed' || p.y >= waterline) continue;
+      if (this._actionActive(p, 'vanish')) continue;   // too deep for the rip
       if (Math.abs(p.x - this.rip.x) > cfg.ripHalfWidth) continue;
       if (!this.rip.caught.has(p.id)) {
         this.rip.caught.add(p.id);
@@ -1058,7 +1165,7 @@ class WaveRunnerGame {
       }
 
       for (const p of this._alivePlayers()) {
-        if (p.state === 'washed') continue;
+        if (p.state === 'washed' || this._actionActive(p, 'vanish')) continue;
         const inWater = p.y < waterline;
         const d = this._dist(p, h);
 
@@ -1194,6 +1301,7 @@ class WaveRunnerGame {
         facing: p.facing,
         moving: !!p.moving,
         running: !!p.running,
+        jumpCombo: p.jumpCombo,
         runReadyIn: Math.max(0, Math.round((p.runReadyAt - this.t) * 10) / 10),
         action: p.action && this.t <= p.action.until ? p.action.type : null,
         buffs: {
@@ -1203,7 +1311,15 @@ class WaveRunnerGame {
         },
         pail: !!p.pail,
       })),
-      waves: this.waves.map(w => ({ id: w.id, size: w.size, y: Math.round(w.y * 10) / 10, slope: w.slope || 0, wobble: w.wobble })),
+      waves: this.waves.map(w => ({
+        id: w.id,
+        size: this._waveEffectiveSize(w),   // as it looks HERE, not at birth
+        y: Math.round(w.y * 10) / 10,
+        slope: w.slope || 0,
+        wobble: w.wobble,
+        // 1 = full foam; ramps to 0 as a fading wave nears its endpoint.
+        fade: w.endY ? Math.max(0, Math.min(1, (w.endY - w.y) / 12)) : 1,
+      })),
       powerups: this.powerups.map(u => ({ id: u.id, type: u.type, x: u.x, y: u.y, ttl: Math.round((u.expiresAt - this.t) * 10) / 10 })),
       // Deliberately no `sting` here: the client can never tell a salp from
       // a disguised jellyfish — that IS the gamble.
