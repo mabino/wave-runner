@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+jobs:
+  tests:
+    name: Unit and integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Run test suite in container
+        run: |
+          # Copy into the container first so npm ci does not pollute the workspace
+          docker run --rm -v "$PWD:/src:ro" -w /work node:20-alpine \
+            sh -c "cp -r /src/. /work && npm ci --no-audit --no-fund && npm test"
