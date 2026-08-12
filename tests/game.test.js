@@ -1553,16 +1553,37 @@ describe('swells beyond the break', () => {
     expect(p.state).toBe('idle');               // stung, but never washed ashore
   });
 
-  test('a timed duck-dive slides the swell by harmlessly', () => {
+  test('a timed duck-dive slides the swell by — and pays like a ride', () => {
     const game = makeGame();
     const p = addSwimmer(game, 'p1', 0, 50);
     sendWave(game, 3, -4);
     game.handleAction('p1', 'dive');
     const events = run(game, 0.5);
-    expect(events.find(e => e.type === 'swell-duck')).toBeTruthy();
+    const duck = events.find(e => e.type === 'swell-duck');
+    expect(duck).toBeTruthy();
     expect(events.find(e => e.type === 'swell-swept')).toBeUndefined();
     expect(p.y).toBe(0);                        // held their ground
     expect(p.hp).toBe(100 - game.cfg.diveHpCost);   // only the dive's cost
+    // Dodging beyond the flags scores just like riding inside them.
+    expect(duck.points).toBe(45);               // thumper base points
+    expect(p.score).toBe(45);
+    expect(p.streak).toBe(1);
+    expect(p.wavesRidden).toBe(1);
+  });
+
+  test('chained duck-dives keep the streak growing', () => {
+    const game = makeGame();
+    const p = addSwimmer(game, 'p1', 0, 50);
+    sendWave(game, 1, -4);
+    game.handleAction('p1', 'dive');
+    run(game, 0.5);
+    expect(p.score).toBe(10);                   // ripple base
+    run(game, 1.6);                             // cooldown clears
+    sendWave(game, 1, -4);
+    game.handleAction('p1', 'dive');
+    run(game, 0.5);
+    expect(p.streak).toBe(2);
+    expect(p.score).toBe(10 + 10 + 2);          // second duck adds streak bonus
   });
 
   test('a body board rides over swells without ducking', () => {
@@ -1746,5 +1767,70 @@ describe('shop collision', () => {
     const events = run(game, 2);
     expect(events.find(e => e.type === 'shop-enter')).toBeTruthy();
     expect(p.inShop).toBe(true);
+  });
+});
+
+describe('the lifeguard chair', () => {
+  function climb(game, id = 'p1') {
+    const p = addSwimmer(game, id, game.cfg.towerY, game.cfg.towerX);
+    run(game, 0.2);
+    return p;
+  }
+
+  test('sidling up to the chair climbs it', () => {
+    const game = makeGame();
+    const p = climb(game);
+    expect(p.onTower).toBe(true);
+    expect(game.snapshot().players[0].onTower).toBe(true);
+    expect(game.snapshot().tower).toEqual({ x: game.cfg.towerX, y: game.cfg.towerY });
+    run(game, 1);
+    expect(p.x).toBe(game.cfg.towerX);           // perched, not wandering
+  });
+
+  test('jumping off the chair sails into the surf for points', () => {
+    const game = makeGame();
+    const p = climb(game);
+    game.handleAction('p1', 'jump');
+    expect(p.action.type).toBe('towerLeap');
+    expect(p.onTower).toBe(false);
+    const events = run(game, game.cfg.towerLeapSec + 0.3);
+    const splash = events.find(e => e.type === 'tower-jump');
+    expect(splash).toMatchObject({ points: game.cfg.towerJumpPoints });
+    expect(p.score).toBe(game.cfg.towerJumpPoints);
+    expect(p.y).toBeLessThan(game.snapshot().flags.beachY);   // landed in the water
+    expect(p.hp).toBe(100);                      // the flight itself is free
+  });
+
+  test('waves slide under a mid-leap flier', () => {
+    const game = makeGame();
+    const p = climb(game);
+    game.handleAction('p1', 'jump');
+    sendWave(game, 3, p.y - 20);                 // crashes through the flight path
+    const events = run(game, 0.6);               // still airborne
+    expect(events.find(e => e.type === 'wave-result')).toBeUndefined();
+    expect(events.find(e => e.type === 'swell-swept')).toBeUndefined();
+    expect(p.hp).toBe(100);
+  });
+
+  test('Stand climbs back down without the payout', () => {
+    const game = makeGame();
+    const p = climb(game);
+    game.handleAction('p1', 'stand');
+    expect(p.onTower).toBe(false);
+    expect(p.score).toBe(0);
+    run(game, 0.3);
+    expect(p.onTower).toBe(false);               // clear of the climb radius
+  });
+
+  test('moving away dismounts, and crabs cannot reach a perch', () => {
+    const game = makeGame();
+    const p = climb(game);
+    const crab = addHazard(game, 'crab', game.cfg.towerX, game.cfg.towerY, 0);
+    run(game, 0.5);
+    expect(p.hp).toBe(100);                      // pinch-proof up there
+    game.handleMove('p1', 50, 85);
+    expect(p.onTower).toBe(false);
+    run(game, 3);
+    expect(p.x).toBeCloseTo(50, 0);
   });
 });

@@ -360,21 +360,25 @@
   const IS_DESKTOP = !!(window.matchMedia
     && window.matchMedia('(hover: hover) and (pointer: fine)').matches);
 
-  const keyHint = (k) => IS_DESKTOP ? `<span class="key-hint">(${k})</span>` : '';
+  // Hints sit inline with the label text — one row, no extra height.
+  const keyHint = (k) => IS_DESKTOP ? ` <span class="key-hint">(${k})</span>` : '';
 
   // The Dive button relabels to Dig on the sand, so its content (hint
   // included) is rebuilt in one place.
   function setDiveButton(onSand) {
-    $('btn-dive').innerHTML =
-      (onSand ? '🕳️<span>Dig</span>' : '🤿<span>Dive</span>') + keyHint('U');
+    $('btn-dive').innerHTML = onSand
+      ? `🕳️<span>Dig${keyHint('U')}</span>`
+      : `🤿<span>Dive${keyHint('U')}</span>`;
   }
 
   if (IS_DESKTOP) {
-    $('btn-jump').insertAdjacentHTML('beforeend', keyHint('J'));
+    const inlineHint = (id, k) =>
+      $(id).querySelector('span').insertAdjacentHTML('beforeend', keyHint(k));
+    inlineHint('btn-jump', 'J');
     setDiveButton(false);
-    $('btn-stand').insertAdjacentHTML('beforeend', keyHint('N'));
-    $('btn-shove').insertAdjacentHTML('beforeend', keyHint('K'));
-    $('btn-rest').insertAdjacentHTML('beforeend', keyHint('R'));
+    inlineHint('btn-stand', 'N');
+    inlineHint('btn-shove', 'K');
+    inlineHint('btn-rest', 'R');
   }
 
   // Flash the matching button so a keystroke gives the same feedback as a tap.
@@ -661,7 +665,25 @@
         if (mine) toast('💨 Winded — catch your breath');
         break;
       case 'swell-duck':
-        if (mine) { Beach.sfx.splash(); GameRenderer.addFloater(50, 40, '🌊 Ducked under!', '#9fd8ef'); }
+        if (mine) {
+          Beach.sfx.splash();
+          GameRenderer.addFloater(50, 40, `🌊 Ducked! +${ev.points ?? 0} ppts`, '#9fd8ef');
+        }
+        break;
+      case 'tower-climb':
+        if (mine) toast('🪜 Top of the chair — hit Jump to dive off!');
+        break;
+      case 'tower-leap':
+        if (mine) Beach.sfx.jump();
+        break;
+      case 'tower-jump':
+        if (mine) {
+          Beach.sfx.bigSplash();
+          toast(`🤸 Chair dive! +${ev.points} ppts`, 'warn');
+          GameRenderer.addFloater(50, 45, `+${ev.points} ppts 🤸`, '#7be3a0');
+        } else {
+          Beach.sfx.splash();
+        }
         break;
       case 'swell-swept':
         if (mine) { Beach.sfx.wipeout(); toast('🌊 Swept back by a swell — dive under them!', 'warn'); }

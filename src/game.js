@@ -117,6 +117,13 @@ const DEFAULTS = {
   rescueSpeed: 26,
   towerX: 88,
 
+  // The lifeguard chair is tall and climbable: sidle up to its base to
+  // climb, then Jump to sail off into the surf for points.
+  towerY: 78,
+  towerClimbRadius: 3.5,
+  towerLeapSec: 1.1,
+  towerJumpPoints: 20,
+
   planeMinGap: 22,          // seconds between banner-plane passes
   planeMaxGap: 40,
   powerupDropDelay: 1.6,    // plane heard -> item splashes down
@@ -274,6 +281,7 @@ class WaveRunnerGame {
       fish: 0,                       // the day's catch (shark insurance)
       nextFishAt: null,              // pending bite while bait soaks
       inShop: false,                 // browsing the Bait & Tackle interior
+      onTower: false,                // perched on the lifeguard chair
       shoveReadyAt: 0,
       outSince: null,
       whistled: false,
@@ -350,6 +358,7 @@ class WaveRunnerGame {
   handleMove(id, x, y, run) {
     const p = this._actor(id);
     if (!p) return;
+    if (p.onTower) this._dismountTower(p);
     if (p.state === 'resting') p.state = 'idle';   // stand up and walk
     this._clearIntent(p);
     p.target = {
@@ -367,6 +376,7 @@ class WaveRunnerGame {
     const vy = Number(dy) || 0;
     const mag = Math.hypot(vx, vy);
     if (!mag) { p.steer = null; return; }
+    if (p.onTower) this._dismountTower(p);
     if (p.state === 'resting') p.state = 'idle';
     this._clearIntent(p);
     p.steer = { x: vx / mag, y: vy / mag, run: !!run };
@@ -376,6 +386,7 @@ class WaveRunnerGame {
     const p = this._actor(id, { allowResting: false });
     if (!p) return;
     if (type === 'stand') {
+      if (p.onTower) { this._dismountTower(p); return; }   // climb back down
       // Standing is a real recovery move, not just the idle default: bailing
       // out of a jump/dive collapses most of the remaining cooldown so a
       // misread can be corrected with a quick second action.
@@ -387,6 +398,24 @@ class WaveRunnerGame {
     }
     if (type !== 'jump' && type !== 'dive') return;
     if (this.t < p.cooldownUntil) return;
+
+    if (p.onTower) {
+      if (type !== 'jump') return;   // only one way off in style
+      // Sail off the chair, out over the break — points on the splash.
+      p.onTower = false;
+      p.action = {
+        type: 'towerLeap',
+        startedAt: this.t,
+        until: this.t + this.cfg.towerLeapSec,
+        fromX: p.x,
+        fromY: p.y,
+        toX: this._clampX(this.cfg.towerX - 10),
+        toY: this.waterline() - 12,
+      };
+      p.cooldownUntil = p.action.until + this.cfg.actionCooldown;
+      this._emit({ type: 'tower-leap', playerId: id });
+      return;
+    }
 
     if (type === 'jump') {
       p.burrowCombo = 0;
@@ -445,6 +474,7 @@ class WaveRunnerGame {
   handleRest(id) {
     const p = this._actor(id);
     if (!p) return;
+    if (p.onTower) this._dismountTower(p);
     if (p.state === 'resting') { p.state = 'idle'; return; }
     this._clearIntent(p);
     if (p.y >= this.waterline()) {
@@ -510,7 +540,7 @@ class WaveRunnerGame {
 
   handleShove(id) {
     const p = this._actor(id, { allowResting: false });
-    if (!p) return;
+    if (!p || p.onTower) return;
     if (this.t < p.shoveReadyAt) return;
     // No shoving from under the water or under the sand.
     if (this._submerged(p)) return;
@@ -661,15 +691,24 @@ class WaveRunnerGame {
     else { p.x = wasX; p.y = wasY; }
   }
 
-  // Under the surface or under the sand — no shoving them, no shoving by them.
+  // Under the surface, under the sand, or in mid-air — no shoving them,
+  // no shoving by them.
   _submerged(p) {
     return this._actionActive(p, 'dive') || this._actionActive(p, 'dig')
-      || this._actionActive(p, 'vanish');
+      || this._actionActive(p, 'vanish') || this._actionActive(p, 'towerLeap');
   }
 
-  // Clean off the playfield (deep search): waves, wildlife, lightning,
-  // rips, and lifeguards all look straight past them.
-  _offPlayfield(p) { return this._actionActive(p, 'vanish'); }
+  // Off the playfield (deep search) or sailing over it (chair leap):
+  // waves, wildlife, lightning, rips, and lifeguards look straight past.
+  _offPlayfield(p) {
+    return this._actionActive(p, 'vanish') || this._actionActive(p, 'towerLeap');
+  }
+
+  // Climb down without fanfare — placed clear of the climb radius.
+  _dismountTower(p) {
+    p.onTower = false;
+    p.y = this.cfg.towerY + 5;
+  }
 
   _drainEvents() {
     const out = this.events;
@@ -694,6 +733,7 @@ class WaveRunnerGame {
     p.burrowCombo = 0;
     p.state = 'washed';
     p.washedUntil = this.t + this.cfg.washStunSec;
+    p.onTower = false;
     p.action = null;
     this._clearIntent(p);
   }
@@ -779,13 +819,20 @@ class WaveRunnerGame {
 
   // Beyond the buoy line, waves are unbroken swells: they never wipe you
   // to the sand, but no wave out there is a free pass either. Duck-dive
-  // under one (or ride it on a body board) and it slides by; get caught
-  // upright and it sweeps you back toward shore with a sting.
+  // under one (or ride it on a body board) and it slides by — and pays,
+  // just like riding it would inside the flags; get caught upright and
+  // it sweeps you back toward shore with a sting.
   _resolveSwell(w, p) {
     const act = p.action && this.t <= p.action.until ? p.action : null;
     const passes = (act && act.type === 'dive') || this.t < p.buffs.bodyboard;
     if (passes) {
-      this._emit({ type: 'swell-duck', playerId: p.id });
+      const size = this._waveEffectiveSize(w);
+      p.streak += 1;
+      p.bestStreak = Math.max(p.bestStreak, p.streak);
+      p.wavesRidden += 1;
+      const points = WAVE_TYPES[size].points + 2 * (p.streak - 1);
+      p.score += points;
+      this._emit({ type: 'swell-duck', playerId: p.id, size, points, streak: p.streak });
       return;
     }
     p.streak = 0;
@@ -858,6 +905,13 @@ class WaveRunnerGame {
       if (p.inShop) continue;
 
       if (p.action && this.t > p.action.until) {
+        if (p.action.type === 'towerLeap') {
+          // Splashdown: stick the landing, collect the crowd's approval.
+          p.x = p.action.toX;
+          p.y = p.action.toY;
+          p.score += this.cfg.towerJumpPoints;
+          this._emit({ type: 'tower-jump', playerId: p.id, points: this.cfg.towerJumpPoints });
+        }
         if (p.action.type === 'vanish') {
           // Back from the deep — sometimes with treasure in hand.
           if (this.rng() < this.cfg.shellChance) {
@@ -870,8 +924,17 @@ class WaveRunnerGame {
         p.action = null;
       }
 
-      // Buried and vanished players stay put until they surface.
-      if (this._actionActive(p, 'dig') || this._offPlayfield(p)) continue;
+      // Mid-leap the arc owns the position — nothing else moves them.
+      if (this._actionActive(p, 'towerLeap')) {
+        const a = p.action;
+        const f = (this.t - a.startedAt) / (a.until - a.startedAt);
+        p.x = a.fromX + (a.toX - a.fromX) * f;
+        p.y = a.fromY + (a.toY - a.fromY) * f;
+        continue;
+      }
+
+      // Perched, buried, and vanished players stay put.
+      if (p.onTower || this._actionActive(p, 'dig') || this._offPlayfield(p)) continue;
 
       const wasX = p.x;
       const wasY = p.y;
@@ -1186,6 +1249,14 @@ class WaveRunnerGame {
         this._emit({ type: 'shop-enter', playerId: p.id });
       }
 
+      // The lifeguard chair: sidle up to its base and you climb it.
+      if (!p.onTower && !p.inShop && p.state === 'idle' && !p.action
+          && Math.hypot(p.x - cfg.towerX, p.y - cfg.towerY) <= cfg.towerClimbRadius) {
+        p.onTower = true;
+        this._clearIntent(p);
+        this._emit({ type: 'tower-climb', playerId: p.id });
+      }
+
       // Fishing: a soaking worm lures a bite after a while in the water.
       if (p.bait > 0 && p.y < waterline && !this._offPlayfield(p)) {
         if (p.nextFishAt === null) {
@@ -1436,7 +1507,7 @@ class WaveRunnerGame {
           this._applyDamage(p, cfg.jellyDamage, 'jelly');
           break;
         } else if (h.kind === 'crab' && !inWater && d <= cfg.hazardRadius - 1 && !h.hit.has(p.id)
-                   && !this._actionActive(p, 'dig')) {
+                   && !this._actionActive(p, 'dig') && !p.onTower) {
           h.hit.add(p.id);
           if (p.state === 'resting') p.state = 'idle';   // pinched awake
           this._emit({ type: 'crab-pinch', playerId: p.id });
@@ -1534,6 +1605,7 @@ class WaveRunnerGame {
         boardwalkBottom: this.cfg.boardwalkBottom,
         danger: this.surfDanger(),
       },
+      tower: { x: this.cfg.towerX, y: this.cfg.towerY },
       shop: {
         x: this.cfg.shopX,
         y: this.cfg.shopY,
@@ -1586,6 +1658,7 @@ class WaveRunnerGame {
         bait: p.bait,
         fish: p.fish,
         inShop: !!p.inShop,
+        onTower: !!p.onTower,
       })),
       waves: this.waves.map(w => ({
         id: w.id,
