@@ -260,7 +260,13 @@
     if (me.bait > 0) buffs.push('🪱');
     if (me.fish > 0) buffs.push(`🐟×${me.fish}`);
     if (me.runReadyIn > 0) buffs.push(`💨 ${Math.ceil(me.runReadyIn)}s`);
-    $('hud-buffs').innerHTML = buffs.map(b => `<span class="buff-chip">${b}</span>`).join('');
+    // Only touch the DOM when the chips actually changed — this runs at
+    // snapshot rate and innerHTML churn forces re-layout.
+    const buffsHtml = buffs.map(b => `<span class="buff-chip">${b}</span>`).join('');
+    if (buffsHtml !== state.lastBuffsHtml) {
+      state.lastBuffsHtml = buffsHtml;
+      $('hud-buffs').innerHTML = buffsHtml;
+    }
 
     $('btn-rest').classList.toggle('on', me.state === 'resting');
 
@@ -578,7 +584,12 @@
     renderHud(snap);
   });
 
-  socket.on('game:event', (ev) => {
+  socket.on('game:events', (events) => {
+    if (!Array.isArray(events)) return;
+    for (const ev of events) handleGameEvent(ev);
+  });
+
+  function handleGameEvent(ev) {
     if (!state.playing) return;
     const mine = ev.playerId === state.myId;
     const snapName = (id) =>
@@ -757,7 +768,7 @@
         toast(mine ? '💀 Your beach day is over — spectating' : `💀 ${snapName(ev.playerId)} is out for the day`, 'danger');
         break;
     }
-  });
+  }
 
   socket.on('game:over', (payload) => renderGameOver(payload));
 

@@ -406,6 +406,10 @@ describe('banner plane power-ups', () => {
     game.handleTapPowerup('p1', 'pu1');
     expect(p.hp).toBe(75);
     expect(p.powerupsCollected).toBe(1);
+    // Collected items vanish from the world as clients see it (the array
+    // itself is pruned at end of tick).
+    expect(game.snapshot().powerups).toHaveLength(0);
+    run(game, 0.2);
     expect(game.powerups.length).toBe(0);
   });
 

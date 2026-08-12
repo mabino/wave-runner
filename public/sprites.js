@@ -296,6 +296,9 @@
   function spriteCanvas(archetype, skinIdx, outfitIdx, facing = 'down', frame = 0) {
     const key = `${archetype}-${skinIdx}-${outfitIdx}-${facing}-${frame}`;
     if (cache.has(key)) return cache.get(key);
+    // Defensive cap: the full variant space is ~2300 canvases; a real room
+    // uses a couple dozen. Reset rather than grow without bound.
+    if (cache.size > 600) cache.clear();
 
     const arch = ARCHETYPES[archetype] || ARCHETYPES[0];
     const pal = paletteFor(archetype, skinIdx, outfitIdx);

@@ -56,17 +56,24 @@
     osc.stop(t + dur + 0.05);
   }
 
-  function noiseBuffer(c, seconds) {
-    const buf = c.createBuffer(1, c.sampleRate * seconds, c.sampleRate);
-    const data = buf.getChannelData(0);
-    let last = 0;
-    for (let i = 0; i < data.length; i++) {
-      // Brown-ish noise reads as water better than white noise.
-      const white = Math.random() * 2 - 1;
-      last = (last + 0.02 * white) / 1.02;
-      data[i] = last * 3.5;
+  // One shared 2s brown-noise buffer, generated once and looped with a
+  // random start offset everywhere. Filling a fresh buffer per sound
+  // (thunder alone is ~70k samples) caused main-thread work and GC churn
+  // on every splash — worst on the phones this game targets.
+  let sharedNoise = null;
+  function noiseBuffer(c) {
+    if (!sharedNoise) {
+      sharedNoise = c.createBuffer(1, c.sampleRate * 2, c.sampleRate);
+      const data = sharedNoise.getChannelData(0);
+      let last = 0;
+      for (let i = 0; i < data.length; i++) {
+        // Brown-ish noise reads as water better than white noise.
+        const white = Math.random() * 2 - 1;
+        last = (last + 0.02 * white) / 1.02;
+        data[i] = last * 3.5;
+      }
     }
-    return buf;
+    return sharedNoise;
   }
 
   function noiseBurst(dur, peak, filterFreq, when = 0, type = 'lowpass') {
@@ -74,14 +81,15 @@
     const c = ensureCtx();
     const t = c.currentTime + when;
     const src = c.createBufferSource();
-    src.buffer = noiseBuffer(c, dur + 0.1);
+    src.buffer = noiseBuffer(c);
+    src.loop = true;
     const filter = c.createBiquadFilter();
     filter.type = type;
     filter.frequency.value = filterFreq;
     const g = c.createGain();
     env(g, t, 0.01, peak, dur);
     src.connect(filter).connect(g).connect(master);
-    src.start(t);
+    src.start(t, Math.random() * 1.5);
     src.stop(t + dur + 0.1);
   }
 
@@ -92,7 +100,7 @@
     ambienceStarted = true;
 
     const src = c.createBufferSource();
-    src.buffer = noiseBuffer(c, 4);
+    src.buffer = noiseBuffer(c);
     src.loop = true;
     const filter = c.createBiquadFilter();
     filter.type = 'lowpass';
@@ -251,16 +259,18 @@
       osc.start(t); osc.stop(t + STEP);
     }
 
-    if (i % 2 === 1) {   // offbeat shaker
+    if (i % 2 === 1) {   // offbeat shaker — shared buffer, no per-note alloc
       const src = c.createBufferSource();
-      src.buffer = noiseBuffer(c, 0.06);
+      src.buffer = noiseBuffer(c);
+      src.loop = true;
       const f = c.createBiquadFilter();
       f.type = 'highpass';
       f.frequency.value = 6000;
       const g = c.createGain();
       env(g, t, 0.005, 0.25, 0.05);
       src.connect(f).connect(g).connect(musicGain);
-      src.start(t);
+      src.start(t, Math.random() * 1.5);
+      src.stop(t + 0.08);
     }
 
     step++;

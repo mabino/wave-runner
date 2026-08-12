@@ -105,11 +105,18 @@
   // Interpolate any id-keyed entity list between the bracketing snapshots.
   function lerpList(br, key, fields) {
     const list = (br ? br.b : snap)[key] || [];
-    if (!br || br.a === br.b) return list;
+    if (!br || br.a === br.b || br.f >= 0.999) return list;
     const prev = new Map((br.a[key] || []).map(e => [e.id, e]));
     return list.map(e => {
       const q = prev.get(e.id);
       if (!q) return e;
+      // Stationary entities (idle players, drifting-nowhere items) need no
+      // clone — this skips most per-frame allocations in a calm scene.
+      let same = true;
+      for (const f of fields) {
+        if (q[f] !== e[f]) { same = false; break; }
+      }
+      if (same) return e;
       const out = { ...e };
       for (const f of fields) out[f] = lerp(q[f], e[f], br.f);
       return out;
@@ -269,52 +276,77 @@
 
   // Inside the shop: aisles, browsing regulars, and the Skipper at the
   // counter. The beach day keeps running — this is just your view of it.
+  // Everything static is painted once to an offscreen canvas per canvas
+  // size; only the bobbing regulars and your avatar repaint per frame.
+  let interiorCache = null;
+  let interiorKey = '';
+
+  function buildInterior(scale, sw, sh) {
+    const off = document.createElement('canvas');
+    off.width = Math.round(W * dpr);
+    off.height = Math.round(H * dpr);
+    const c = off.getContext('2d');
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.imageSmoothingEnabled = false;
+
+    // Floor planks.
+    c.fillStyle = '#8a683f';
+    c.fillRect(0, 0, W, H);
+    c.strokeStyle = 'rgba(40, 26, 10, .25)';
+    c.lineWidth = 1;
+    c.beginPath();
+    for (let y = 0; y < H; y += 14) { c.moveTo(0, y); c.lineTo(W, y); }
+    c.stroke();
+    // Back wall + sign.
+    c.fillStyle = '#5c4326';
+    c.fillRect(0, 0, W, H * 0.16);
+    c.font = `700 ${Math.round(H * 0.035)}px system-ui`;
+    c.textAlign = 'center';
+    c.fillStyle = '#ffd97b';
+    c.fillText('🎣 BAIT & TACKLE', W / 2, H * 0.1);
+
+    // Counter with the Skipper behind it.
+    const counterY = H * 0.26;
+    c.drawImage(window.Sprites.spriteCanvas(7, 1, 5, 'down', 0), W / 2 - sw / 2, counterY - sh * 0.9, sw, sh);
+    c.fillStyle = '#6d4f2e';
+    c.fillRect(W * 0.28, counterY, W * 0.44, 16);
+    c.fillStyle = '#553d1e';
+    c.fillRect(W * 0.28, counterY + 16, W * 0.44, 7);
+    c.font = '13px system-ui';
+    c.fillText('🪱', W * 0.34, counterY + 10);
+    c.fillText('🐟', W * 0.66, counterY + 10);
+
+    // Two aisles of beach sundries.
+    const aisle = (ay, items) => {
+      c.fillStyle = '#75552e';
+      c.fillRect(W * 0.12, ay, W * 0.76, 13);
+      c.fillStyle = '#5c4020';
+      c.fillRect(W * 0.12, ay + 13, W * 0.76, 5);
+      c.font = '12px system-ui';
+      items.forEach((it, i) => c.fillText(it, W * (0.2 + i * 0.15), ay + 7));
+    };
+    aisle(H * 0.48, ['🧴', '🛟', '🪱', '🛹', '🧺']);
+    aisle(H * 0.66, ['🐟', '🥤', '🍦', '🧢', '🩴']);
+
+    // Door mat back out to the boardwalk.
+    c.fillStyle = 'rgba(36, 23, 8, .8)';
+    c.fillRect(W / 2 - sw, H - 10, sw * 2, 10);
+    return off;
+  }
+
   function drawShopInterior(me) {
     const scale = Math.max(2.6, Math.min(3.8, W / 140));
     const sw = window.Sprites.SPRITE_W * scale;
     const sh = window.Sprites.SPRITE_H * scale;
     const t = performance.now() / 1000;
 
-    // Floor planks.
-    ctx.fillStyle = '#8a683f';
-    ctx.fillRect(0, 0, W, H);
-    ctx.strokeStyle = 'rgba(40, 26, 10, .25)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let y = 0; y < H; y += 14) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
-    ctx.stroke();
-    // Back wall + sign.
-    ctx.fillStyle = '#5c4326';
-    ctx.fillRect(0, 0, W, H * 0.16);
-    ctx.font = `700 ${Math.round(H * 0.035)}px system-ui`;
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#ffd97b';
-    ctx.fillText('🎣 BAIT & TACKLE', W / 2, H * 0.1);
-
-    // Counter with the Skipper behind it.
-    const counterY = H * 0.26;
-    const keeper = window.Sprites.spriteCanvas(7, 1, 5, 'down', 0);
+    const key = `${W}x${H}x${dpr}`;
+    if (!interiorCache || interiorKey !== key) {
+      interiorCache = buildInterior(scale, sw, sh);
+      interiorKey = key;
+    }
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(keeper, W / 2 - sw / 2, counterY - sh * 0.9, sw, sh);
-    ctx.fillStyle = '#6d4f2e';
-    ctx.fillRect(W * 0.28, counterY, W * 0.44, 16);
-    ctx.fillStyle = '#553d1e';
-    ctx.fillRect(W * 0.28, counterY + 16, W * 0.44, 7);
-    ctx.font = '13px system-ui';
-    ctx.fillText('🪱', W * 0.34, counterY + 10);
-    ctx.fillText('🐟', W * 0.66, counterY + 10);
-
-    // Two aisles of beach sundries.
-    const aisle = (ay, items) => {
-      ctx.fillStyle = '#75552e';
-      ctx.fillRect(W * 0.12, ay, W * 0.76, 13);
-      ctx.fillStyle = '#5c4020';
-      ctx.fillRect(W * 0.12, ay + 13, W * 0.76, 5);
-      ctx.font = '12px system-ui';
-      items.forEach((it, i) => ctx.fillText(it, W * (0.2 + i * 0.15), ay + 7));
-    };
-    aisle(H * 0.48, ['🧴', '🛟', '🪱', '🛹', '🧺']);
-    aisle(H * 0.66, ['🐟', '🥤', '🍦', '🧢', '🩴']);
+    ctx.drawImage(interiorCache, 0, 0, W, H);
 
     // Regulars browsing the aisles (window dressing, not interactive).
     const bob1 = Math.sin(t * 1.3) * 2;
@@ -325,9 +357,7 @@
     // You, at the counter's queue.
     const mine = window.Sprites.spriteCanvas(me.avatar.archetype, me.avatar.skin, me.avatar.outfit, 'up', 0);
     ctx.drawImage(mine, W / 2 - sw / 2, H * 0.82, sw, sh);
-    // Door mat back out to the boardwalk.
-    ctx.fillStyle = 'rgba(36, 23, 8, .8)';
-    ctx.fillRect(W / 2 - sw, H - 10, sw * 2, 10);
+    ctx.textAlign = 'center';
   }
 
   // The boardwalk behind the beach — just weathered planks for now.
@@ -570,9 +600,16 @@
   }
 
   // Deterministic per-player phase so a crowd doesn't march in lockstep.
+  // Memoized: this runs per player per frame.
+  const walkPhaseCache = new Map();
   function walkPhase(id) {
-    let h = 0;
-    for (let i = 0; i < id.length; i++) h = (h + id.charCodeAt(i)) % 97;
+    let h = walkPhaseCache.get(id);
+    if (h === undefined) {
+      h = 0;
+      for (let i = 0; i < id.length; i++) h = (h + id.charCodeAt(i)) % 97;
+      if (walkPhaseCache.size > 256) walkPhaseCache.clear();
+      walkPhaseCache.set(id, h);
+    }
     return h;
   }
 
@@ -867,7 +904,13 @@
     if (snap.rip) drawRip(snap.rip, beachTop);
     drawBuoys(snap.flags.deepY, '#e0403c');
     if (snap.flags.outerY !== undefined) drawBuoys(snap.flags.outerY, '#ffffff');
-    for (const w of lerpList(br, 'waves', ['y'])) drawWave(w, beachTop);
+    for (const w of lerpList(br, 'waves', ['y'])) {
+      // Off-screen waves (roughly half the set, now that they run from the
+      // horizon) pay for three full-width paths each — skip them outright.
+      const wy = sy(w.y);
+      if (wy < -50 || wy > H + 60) continue;
+      drawWave(w, beachTop);
+    }
     if (snap.strike) drawStrikeWarning(snap.strike);
     drawBeach(beachTop);
     drawFlag(snap.flags.minX, beachTop, snap.flags.danger);

@@ -71,6 +71,9 @@ function startLoop(room) {
     if (!game) { stopLoop(room.code); return; }
 
     const events = game.tick(dt);
+    // One batched packet per tick instead of one per event — busy moments
+    // (storms, shove brawls) otherwise fan out into a packet flurry.
+    const batch = [];
     for (const ev of events) {
       if (ev.type === 'game-over') {
         io.to(room.code).emit('game:over', { reason: ev.reason, tally: ev.tally });
@@ -78,9 +81,10 @@ function startLoop(room) {
         stopLoop(room.code);
         io.to(room.code).emit('room:updated', room.toPublic());
       } else {
-        io.to(room.code).emit('game:event', ev);
+        batch.push(ev);
       }
     }
+    if (batch.length) io.to(room.code).emit('game:events', batch);
     if (room.game) io.to(room.code).emit('game:state', room.game.snapshot());
   }, TICK_MS);
   roomLoops.set(room.code, interval);

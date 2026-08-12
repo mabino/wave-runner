@@ -165,6 +165,16 @@ const WEATHER = ['sunny', 'cloudy', 'storm'];
 
 const round1 = (v) => Math.round(v * 10) / 10;
 
+// Compact an array in place, keeping entries that pass keep(e). Avoids
+// reallocating entity lists every tick when nothing actually expired.
+function pruneInPlace(arr, keep) {
+  let w = 0;
+  for (let i = 0; i < arr.length; i++) {
+    if (keep(arr[i])) arr[w++] = arr[i];
+  }
+  arr.length = w;
+}
+
 // Optional computer-controlled beachgoers, in escalating order of menace.
 // aggression drives shoving and prey-stalking; skill drives wave reading;
 // pace scales movement speed — Pete darts, Bruiser lumbers.
@@ -454,6 +464,7 @@ class WaveRunnerGame {
     if (!pu) return;
     // Tapping never grabs at range: it marks the item and walks the player
     // over; collection happens only on intersection.
+    if (pu.taken) return;
     if (this._dist(p, pu) <= this.cfg.pickupRadius) {
       this._collect(p, pu);
     } else {
@@ -744,9 +755,11 @@ class WaveRunnerGame {
     const waterline = this.waterline();
     // High tide runs faster surf; low tide drags it.
     const speedFactor = 1 + this.cfg.tideSpeedGain * this.tide();
+    const alive = this._alivePlayers();
     for (const w of this.waves) {
       w.y += WAVE_TYPES[w.size].speed * speedFactor * dt;
-      for (const p of this._alivePlayers()) {
+      for (const p of alive) {
+        if (p.state === 'out') continue;               // eliminated this tick
         if (p.y >= waterline) continue;                // on the sand — safe
         if (this._offPlayfield(p)) continue;
         if (w.resolved.has(p.id)) continue;
@@ -760,7 +773,7 @@ class WaveRunnerGame {
     // A wave is spent once its trailing edge passes the sand — or its own
     // endpoint, for the ones that die offshore.
     const sand = this.waterline();
-    this.waves = this.waves.filter(w =>
+    pruneInPlace(this.waves, w =>
       w.y - Math.abs(w.slope || 0) * 50 < Math.min(w.endY ?? sand, sand));
   }
 
@@ -916,12 +929,13 @@ class WaveRunnerGame {
         }
       }
 
-      if (p.pendingPickup && !this.powerups.find(u => u.id === p.pendingPickup)) {
+      if (p.pendingPickup
+          && !this.powerups.find(u => u.id === p.pendingPickup && !u.taken)) {
         p.pendingPickup = null;
       }
       // Walk-over pickup: intersecting an item grabs it, tapped or not.
-      for (const pu of [...this.powerups]) {
-        if (this._dist(p, pu) <= this.cfg.pickupRadius) this._collect(p, pu);
+      for (const pu of this.powerups) {
+        if (!pu.taken && this._dist(p, pu) <= this.cfg.pickupRadius) this._collect(p, pu);
       }
     }
   }
@@ -988,8 +1002,9 @@ class WaveRunnerGame {
 
       if (!p.target && !p.steer) {
         // Loot interest.
-        if (this.powerups.length && this.rng() < 0.3) {
-          const pu = this.powerups[Math.floor(this.rng() * this.powerups.length)];
+        const loot = this.powerups.filter(u => !u.taken);
+        if (loot.length && this.rng() < 0.3) {
+          const pu = loot[Math.floor(this.rng() * loot.length)];
           this.handleTapPowerup(p.id, pu.id);
           continue;
         }
@@ -1247,7 +1262,7 @@ class WaveRunnerGame {
         g.phase = 'done';
       }
     }
-    this.lifeguards = this.lifeguards.filter(g => g.phase !== 'done');
+    pruneInPlace(this.lifeguards, g => g.phase !== 'done');
   }
 
   // ─── Banner plane & power-ups ─────────────────────────────────────────────
@@ -1327,8 +1342,9 @@ class WaveRunnerGame {
     // so some raids are beatable sprints and others slow glides.
     if (this.t >= this.nextGullAt) {
       this.nextGullAt = this.t + this._rand(cfg.gullMinGap, cfg.gullMaxGap);
-      if (!this.gullRaid && this.powerups.length) {
-        const pu = this.powerups[Math.floor(this.rng() * this.powerups.length)];
+      const loose = this.powerups.filter(u => !u.taken);
+      if (!this.gullRaid && loose.length) {
+        const pu = loose[Math.floor(this.rng() * loose.length)];
         this.gullRaid = {
           powerupId: pu.id, x: pu.x, y: pu.y,
           fromX: this._rand(5, 95),
@@ -1339,11 +1355,11 @@ class WaveRunnerGame {
       }
     }
     if (this.gullRaid) {
-      const pu = this.powerups.find(u => u.id === this.gullRaid.powerupId);
+      const pu = this.powerups.find(u => u.id === this.gullRaid.powerupId && !u.taken);
       if (!pu) {
         this.gullRaid = null;   // someone beat the bird to it
       } else if (this.t >= this.gullRaid.at) {
-        this.powerups = this.powerups.filter(u => u.id !== pu.id);
+        pu.taken = true;
         this._emit({ type: 'gull-steal', powerupId: pu.id, powerupType: pu.type, x: pu.x, y: pu.y });
         this.gullRaid = null;
       }
@@ -1364,15 +1380,17 @@ class WaveRunnerGame {
         expiresAt: this.t + cfg.salpTtl,
       });
     }
-    for (const s of [...this.salps]) {
+    const alive = this._alivePlayers();
+    for (const s of this.salps) {
+      if (s.taken) continue;
       s.x += s.vx * dt;
       s.y += s.vy * dt;
       if (s.x < 6 || s.x > 94) s.vx = -s.vx;
       s.y = Math.min(s.y, waterline - 4);
-      for (const p of this._alivePlayers()) {
-        if (!p.pail || p.state === 'washed' || p.y >= waterline) continue;
+      for (const p of alive) {
+        if (p.state === 'out' || !p.pail || p.state === 'washed' || p.y >= waterline) continue;
         if (this._dist(p, s) > cfg.pickupRadius) continue;
-        this.salps = this.salps.filter(u => u.id !== s.id);
+        s.taken = true;
         if (s.sting) {
           this._emit({ type: 'salp-sting', playerId: p.id });
           this._applyDamage(p, cfg.jellyDamage, 'jelly');
@@ -1383,7 +1401,7 @@ class WaveRunnerGame {
         break;
       }
     }
-    this.salps = this.salps.filter(s => this.t < s.expiresAt);
+    pruneInPlace(this.salps, s => !s.taken && this.t < s.expiresAt);
 
     for (const h of this.hazards) {
       h.x += h.vx * dt;
@@ -1395,8 +1413,8 @@ class WaveRunnerGame {
         h.y = Math.max(h.y, waterline + 3);    // crabs retreat from the tide
       }
 
-      for (const p of this._alivePlayers()) {
-        if (p.state === 'washed' || this._offPlayfield(p)) continue;
+      for (const p of alive) {
+        if (p.state === 'out' || p.state === 'washed' || this._offPlayfield(p)) continue;
         const inWater = p.y < waterline;
         const d = this._dist(p, h);
 
@@ -1427,11 +1445,11 @@ class WaveRunnerGame {
       }
     }
 
-    this.hazards = this.hazards.filter(h => this.t < h.expiresAt && h.x > -8 && h.x < 108);
+    pruneInPlace(this.hazards, h => this.t < h.expiresAt && h.x > -8 && h.x < 108);
   }
 
   _collect(p, pu) {
-    this.powerups = this.powerups.filter(u => u.id !== pu.id);
+    pu.taken = true;   // pruned at end of tick; every reader skips taken
     if (pu.type === 'sunscreen') {
       p.hp = Math.min(this.cfg.maxHp, p.hp + this.cfg.sunscreenHeal);
     } else if (pu.type === 'pail') {
@@ -1444,7 +1462,7 @@ class WaveRunnerGame {
   }
 
   _expireBuffsAndPowerups() {
-    this.powerups = this.powerups.filter(u => u.expiresAt > this.t);
+    pruneInPlace(this.powerups, u => !u.taken && u.expiresAt > this.t);
   }
 
   // ─── Damage & game over ───────────────────────────────────────────────────
@@ -1452,7 +1470,8 @@ class WaveRunnerGame {
   _applyDamage(p, amount, cause) {
     p.hp = Math.max(0, p.hp - amount);
     p.damageTaken += amount;
-    this._emit({ type: 'damage', playerId: p.id, amount, cause, hp: p.hp });
+    // No per-hit event: clients read HP from snapshots, and continuous
+    // damage (rips, swells) would flood the wire at tick rate.
     if (p.hp <= 0 && p.state !== 'out') {
       p.state = 'out';
       p.eliminatedAtHour = this.clockHour();
@@ -1577,10 +1596,11 @@ class WaveRunnerGame {
         // 1 = full foam; ramps to 0 as a fading wave nears its endpoint.
         fade: w.endY ? Math.max(0, Math.min(1, (w.endY - w.y) / 12)) : 1,
       })),
-      powerups: this.powerups.map(u => ({ id: u.id, type: u.type, x: u.x, y: u.y, ttl: round1((u.expiresAt - this.t)) })),
+      powerups: this.powerups.filter(u => !u.taken)
+        .map(u => ({ id: u.id, type: u.type, x: u.x, y: u.y, ttl: round1(u.expiresAt - this.t) })),
       // Deliberately no `sting` here: the client can never tell a salp from
       // a disguised jellyfish — that IS the gamble.
-      salps: this.salps.map(s => ({
+      salps: this.salps.filter(s => !s.taken).map(s => ({
         id: s.id,
         x: round1(s.x),
         y: round1(s.y),
