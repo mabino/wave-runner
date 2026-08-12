@@ -442,23 +442,40 @@
     ctx.fill();
   }
 
-  function drawLifeguardTower(y) {
-    const x = W - 46;
-    ctx.fillStyle = '#c94040';
-    ctx.fillRect(x - 14, y - 34, 28, 20);
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(x - 14, y - 38, 28, 5);
+  // The lifeguard chair: tall, world-anchored, and climbable — a ladder
+  // up the front, a perch on top. TOWER_LIFT is how high a perched player
+  // sits above the base; keep it in step with the platform height below.
+  const TOWER_LIFT = 74;
+  function drawLifeguardTower(x, y) {
+    // Legs.
     ctx.strokeStyle = '#8a5a2a';
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 3.5;
     ctx.beginPath();
-    ctx.moveTo(x - 10, y - 14); ctx.lineTo(x - 12, y + 8);
-    ctx.moveTo(x + 10, y - 14); ctx.lineTo(x + 12, y + 8);
+    ctx.moveTo(x - 14, y - 48); ctx.lineTo(x - 18, y + 4);
+    ctx.moveTo(x + 14, y - 48); ctx.lineTo(x + 18, y + 4);
     ctx.stroke();
-    // The lifeguard on watch.
-    ctx.fillStyle = '#e8b184';
-    ctx.fillRect(x - 3, y - 46, 7, 6);
-    ctx.fillStyle = '#e0403c';
-    ctx.fillRect(x - 4, y - 41, 9, 6);
+    // Cross braces.
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x - 16, y - 12); ctx.lineTo(x + 16, y - 28);
+    ctx.moveTo(x + 16, y - 12); ctx.lineTo(x - 16, y - 28);
+    ctx.stroke();
+    // Ladder up the front — the way up.
+    ctx.beginPath();
+    ctx.moveTo(x - 4, y + 4); ctx.lineTo(x - 4, y - 48);
+    ctx.moveTo(x + 4, y + 4); ctx.lineTo(x + 4, y - 48);
+    for (let ry = y - 2; ry > y - 48; ry -= 7) {
+      ctx.moveTo(x - 4, ry);
+      ctx.lineTo(x + 4, ry);
+    }
+    ctx.stroke();
+    // Platform, seat back, and the white rail.
+    ctx.fillStyle = '#c94040';
+    ctx.fillRect(x - 17, y - 64, 34, 18);
+    ctx.fillStyle = '#a83434';
+    ctx.fillRect(x - 17, y - 48, 34, 3);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(x - 17, y - 68, 34, 5);
   }
 
   // A rescue swimmer powering through the surf: red cap, white wake, and
@@ -628,7 +645,9 @@
     const scale = spriteScale();
     const w = window.Sprites.SPRITE_W * scale;
     const h = window.Sprites.SPRITE_H * scale;
-    const x = sx(p.x), y = sy(p.y);
+    const x = sx(p.x);
+    // Perched players render up on the chair's platform.
+    const y = sy(p.y) - (p.onTower ? TOWER_LIFT : 0);
     const bob = walking ? -Math.abs(Math.sin(phase * Math.PI * 2)) * scale * 0.5 : 0;
 
     // Shoppers are indoors — nothing of them to draw on the map.
@@ -675,6 +694,17 @@
         ctx.textAlign = 'center';
         ctx.fillText('✨', x + w * 0.6, y - h * lift);
       }
+    } else if (p.action === 'towerLeap') {
+      // Sailing off the chair — big air, a little tumble on the way down.
+      ctx.fillStyle = 'rgba(0,0,0,.2)';
+      ctx.beginPath();
+      ctx.ellipse(x, y + h * 0.3, w * 0.35, 3.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.save();
+      ctx.translate(x, y - h * 1.1);
+      ctx.rotate(Math.sin(performance.now() / 140) * 0.5);
+      ctx.drawImage(sprite, -w / 2, -h / 2, w, h);
+      ctx.restore();
     } else if (p.action === 'dive') {
       // Under the surface: just a hint of the body + ripples.
       ctx.globalAlpha *= 0.45;
@@ -925,8 +955,10 @@
       drawUmbrella(W * 0.5, backY, '#ffd97b');
       drawUmbrella(W * 0.84, backY, '#1e6ee0');
     }
-    const towerY = sy(snap.flags.beachY + (bwY - snap.flags.beachY) * 0.45);
-    if (towerY > -60 && towerY < H + 60) drawLifeguardTower(towerY);
+    if (snap.tower) {
+      const ty = sy(snap.tower.y);
+      if (ty > -120 && ty < H + 120) drawLifeguardTower(sx(snap.tower.x), ty);
+    }
     if (snap.shop) drawShop(snap.shop);
     for (const g of (snap.lifeguards || [])) drawRescueSwimmer(g);
 

@@ -59,10 +59,15 @@ keyboard setup is detected). Served at `binolabs.com/waves/`.
   drops out of sight, and a white buoy line marks the true outer limit.
   Out there, waves are unbroken swells: they can't wipe you out to the
   sand, but they're no free pass either — **duck-dive** under each one
-  (or ride it on a body board) or it sweeps you back toward shore with
-  a sting. Waves only break, wipe, and pay points inside the surf zone.
+  (or ride it on a body board) and it pays like a ride, streaks and all;
+  get caught upright and it sweeps you back toward shore with a sting.
+  Waves only break and wipe inside the surf zone.
 - **Lifeguards** whistle anyone beyond the side flags or past the outer
   buoy line; linger and they haul you in with an HP penalty.
+- **The lifeguard chair** is tall and climbable: sidle up to its base to
+  scale the ladder, then **Jump** to sail off into the surf — points on
+  the splash, and crabs can't pinch what they can't reach. **Stand**
+  climbs back down empty-handed.
 - **Rip currents** build up, hold, and die back down: a subtly darker
   channel of outbound foam that drags anyone in it further and further
   out to sea while draining HP fast — the darkened channel is visible
