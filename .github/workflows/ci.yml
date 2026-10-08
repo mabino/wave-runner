@@ -17,5 +17,5 @@ jobs:
       - name: Run test suite in container
         run: |
           # Copy into the container first so npm ci does not pollute the workspace
-          docker run --rm -v "$PWD:/src:ro" -w /work node:20-alpine \
+          docker run --rm -v "$PWD:/src:ro" -w /work node:24-alpine \
             sh -c "cp -r /src/. /work && npm ci --no-audit --no-fund && npm test"
